@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Railytics System - Automatic Railcar Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0c1426 0%, #1a2332 100%);
+            color: #e8f4f8;
+            min-height: 100vh;
+            overflow-x: auto;
+        }
+
+        .header {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(20px);
+            padding: 32px;
+            text-align: center;
+            border-bottom: 2px solid #2563eb;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .header h1 {
+            color: #3b82f6;
+            font-size: 2.5rem;
+            margin-bottom: 12px;
+            font-weight: 700;
+            text-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .header .subtitle {
+            color: #94a3b8;
+            font-size: 1.1rem;
+            margin-bottom: 24px;
+            font-weight: 400;
+        }
+
+        .tech-stack {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .tech-badge {
+            background: linear-gradient(135deg, #1e40af, #3730a3);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border: 1px solid #3b82f6;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.2);
+        }
+
+        .tech-badge:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+        }
+
+        .controls {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #059669, #047857);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: 1px solid #10b981;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.2);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
+        }
+
+        .btn.secondary {
+            background: linear-gradient(135deg, #4338ca, #3730a3);
+            border-color: #6366f1;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.2);
+        }
+
+        .btn.secondary:hover {
+            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+        }
+
+        .flowchart-container {
+            padding: 48px 24px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .flowchart {
+            background: rgba(15, 23, 42, 0.4);
+            border-radius: 20px;
+            padding: 48px;
+            border: 2px solid #334155;
+            width: 100%;
+            max-width: 1400px;
+            position: relative;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Control Panel */
+        .control-panel {
+            position: fixed;
+            top: 50%;
+            right: 24px;
+            transform: translateY(-50%);
+            background: rgba(15, 23, 42, 0.95);
+            border: 2px solid #334155;
+            border-radius: 16px;
+            padding: 24px;
+            z-index: 1000;
+            width: 280px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .control-panel h3 {
+            color: #3b82f6;
+            font-size: 18px;
+            margin-bottom: 20px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            color: #e2e8f0;
+            font-size: 14px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .control-group select,
+        .control-group input[type="range"] {
+            width: 100%;
+            padding: 10px;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #475569;
+            border-radius: 8px;
+            color: #e2e8f0;
+            font-size: 14px;
+        }
+
+        .control-group input[type="range"] {
+            padding: 0;
+            height: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #475569;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        }
+
+        .mini-btn {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            margin: 4px;
+            transition: all 0.3s ease;
+        }
+
+        .mini-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+        }
+
+        /* Nodes */
+        .node {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            color: #f1f5f9;
+            padding: 20px 28px;
+            border-radius: 12px;
+            text-align: center;
+            position: relative;
+            margin: 12px;
+            border: 2px solid #475569;
+            transition: all 0.4s ease;
+            cursor: pointer;
+            font-weight: 600;
+            min-width: 180px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .node:hover {
+            transform: translateY(-4px);
+            border-color: #3b82f6;
+            box-shadow: 0 12px 40px rgba(59, 130, 246, 0.3);
+        }
+
+        .node.clicked {
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.3);
+        }
+
+        .node.camera {
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .node.processing {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .node.ai {
+            background: linear-gradient(135deg, #059669, #047857);
+            color: white;
+            font-weight: 600;
+        }
+
+        .node.decision {
+            background: linear-gradient(135deg, #ea580c, #dc2626);
+            color: white;
+            clip-path: polygon(15% 0%, 85% 0%, 100% 50%, 85% 100%, 15% 100%, 0% 50%);
+            font-weight: 700;
+            min-width: 200px;
+        }
+
+        .node.database {
+            background: linear-gradient(135deg, #1d4ed8, #1e40af);
+            color: white;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .node.external {
+            background: linear-gradient(135deg, #be123c, #9f1239);
+            color: white;
+            font-weight: 600;
+        }
+
+        .node.web {
+            background: linear-gradient(135deg, #0891b2, #0e7490);
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        /* Layout */
+        .flow-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 24px 0;
+            gap: 40px;
+            flex-wrap: wrap;
+        }
+
+        .flow-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .flow-group {
+            display: flex;
+            gap: 32px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* Connectors */
+        .connector-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 16px 0;
+            position: relative;
+        }
+
+        .arrow-down {
+            width: 3px;
+            height: 50px;
+            background: linear-gradient(to bottom, #475569, #3b82f6);
+            position: relative;
+            margin: 0 auto;
+            transition: all 0.4s ease;
+            border-radius: 2px;
+        }
+
+        .arrow-down.active {
+            background: linear-gradient(to bottom, #3b82f6, #60a5fa);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+        }
+
+        .arrow-down::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: -6px;
+            width: 0;
+            height: 0;
+            border-left: 7px solid transparent;
+            border-right: 7px solid transparent;
+            border-top: 12px solid #475569;
+            transition: all 0.4s ease;
+        }
+
+        .arrow-down.active::after {
+            border-top-color: #60a5fa;
+        }
+
+        /* Labels */
+        .connection-label {
+            font-size: 13px;
+            color: #94a3b8;
+            background: rgba(15, 23, 42, 0.8);
+            padding: 6px 12px;
+            border-radius: 8px;
+            margin: 8px 0;
+            font-weight: 600;
+            border: 1px solid #334155;
+            backdrop-filter: blur(10px);
+        }
+
+        .yes-label {
+            color: #10b981;
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .no-label {
+            color: #ef4444;
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        /* Sections */
+        .section {
+            background: rgba(30, 41, 59, 0.3);
+            border-radius: 16px;
+            padding: 32px;
+            margin: 20px 0;
+            border: 2px solid #334155;
+            transition: all 0.4s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .section:hover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .section-title {
+            color: #3b82f6;
+            font-size: 16px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Info Panel */
+        .info-panel {
+            position: fixed;
+            bottom: 24px;
+            left: 24px;
+            background: rgba(15, 23, 42, 0.95);
+            border: 2px solid #334155;
+            border-radius: 16px;
+            padding: 20px;
+            max-width: 360px;
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.4s ease;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .info-panel.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .info-panel h4 {
+            color: #3b82f6;
+            font-size: 16px;
+            margin-bottom: 12px;
+            font-weight: 700;
+        }
+
+        .info-panel p {
+            color: #cbd5e1;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* Simulation Overlay */
+        .simulation-overlay {
+            position: fixed;
+            top: 24px;
+            left: 24px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(20px);
+            border: 2px solid #334155;
+            border-radius: 16px;
+            padding: 24px;
+            z-index: 2000;
+            width: 320px;
+            text-align: center;
+            display: none;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .simulation-overlay h3 {
+            color: #3b82f6;
+            margin-bottom: 16px;
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .simulation-progress {
+            background: #334155;
+            height: 10px;
+            border-radius: 6px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+
+        .simulation-progress-bar {
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 6px;
+        }
+
+        .simulation-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin: 16px 0;
+            font-size: 14px;
+        }
+
+        .simulation-stat {
+            background: rgba(30, 41, 59, 0.8);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #475569;
+        }
+
+        .simulation-stat-label {
+            color: #94a3b8;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .simulation-stat-value {
+            color: #3b82f6;
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        /* Animations */
+        @keyframes nodeFlow {
+            0% { 
+                background: linear-gradient(135deg, #1e293b, #334155);
+                transform: scale(1);
+            }
+            50% { 
+                background: linear-gradient(135deg, #3b82f6, #2563eb);
+                transform: scale(1.08);
+            }
+            100% { 
+                background: linear-gradient(135deg, #1e293b, #334155);
+                transform: scale(1);
+            }
+        }
+
+        .node.flow-active {
+            animation: nodeFlow 1.2s ease-in-out;
+        }
+
+        @keyframes dataFlow {
+            0% { transform: translateY(-15px); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateY(15px); opacity: 0; }
+        }
+
+        .data-particle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #3b82f6;
+            border-radius: 50%;
+            animation: dataFlow 2.5s linear infinite;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.8);
+        }
+
+        .data-particle.train-detected {
+            background: #10b981;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.8);
+        }
+
+        .data-particle.report-mark {
+            background: #f59e0b;
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.8);
+            width: 12px;
+            height: 12px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .control-panel {
+                position: static;
+                transform: none;
+                width: 100%;
+                margin-bottom: 24px;
+            }
+            
+            .flowchart {
+                padding: 24px;
+            }
+            
+            .node {
+                min-width: 160px;
+                font-size: 13px;
+            }
+            
+            .info-panel {
+                position: static;
+                margin-top: 24px;
+                opacity: 1;
+                transform: none;
+            }
+            
+            .simulation-overlay {
+                top: 12px;
+                left: 12px;
+                right: 12px;
+                width: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚂 Railytics System</h1>
+        <p class="subtitle">Automatic railcar detection through computer vision</p>
+        
+        <div class="tech-stack">
+            <div class="tech-badge">Azure Cloud</div>
+            <div class="tech-badge">Computer Vision</div>
+            <div class="tech-badge">YOLOv8 AI</div>
+            <div class="tech-badge">OCR Engine</div>
+            <div class="tech-badge">Real-time Processing</div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn" onclick="animateFlow()">▶️ Simulate Process</button>
+            <button class="btn secondary" onclick="simulateRealTime()">🔄 Real-time Demo</button>
+            <button class="btn secondary" onclick="showMetrics()">📊 Metrics</button>
+            <button class="btn secondary" onclick="resetSystem()">🔄 Reset</button>
+        </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="control-panel">
+        <h3>⚙️ Control Panel</h3>
+        
+        <div class="control-group">
+            <label>Highlight Section:</label>
+            <select id="sectionSelect" onchange="highlightSection(this.value)">
+                <option value="">Select...</option>
+                <option value="ingestion">Video Ingestion</option>
+                <option value="detection">AI Detection</option>
+                <option value="extraction">Data Extraction</option>
+                <option value="storage">Storage</option>
+                <option value="interface">User Interface</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label>Simulation Speed:</label>
+            <input type="range" id="speedRange" min="0.5" max="3" step="0.1" value="1" onchange="updateSpeed(this.value)">
+            <div style="font-size: 12px; color: #94a3b8; text-align: center;" id="speedValue">1x</div>
+        </div>
+        
+        <div class="control-group">
+            <button class="mini-btn" onclick="explainSystem()">📖 Explain</button>
+            <button class="mini-btn" onclick="showStats()">📈 Statistics</button>
+        </div>
+        
+        <div class="control-group">
+            <button class="mini-btn" onclick="testAccuracy()">🎯 Test Accuracy</button>
+            <button class="mini-btn" onclick="toggleAlerts()">🚨 Alerts</button>
+        </div>
+    </div>
+
+    <div class="flowchart-container">
+        <div class="flowchart" id="flowchart">
+            
+            <!-- Video Ingestion Section -->
+            <div class="section" data-section="ingestion">
+                <div class="section-title">🎥 Real-time Video Ingestion</div>
+                <div class="flow-row">
+                    <div class="node external" data-info="Public Cameras" onclick="showNodeInfo(this)">
+                        Railfan Cameras<br><small>YouTube Live Streams</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                    <div class="connection-label">Live video signal</div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="node processing" data-info="Azure Ingestion" onclick="showNodeInfo(this)">
+                        Azure Media Services<br><small>Capture and streaming</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                    <div class="connection-label">Frames every 5 seconds</div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="node processing" data-info="Preprocessing" onclick="showNodeInfo(this)">
+                        Preprocessing<br><small>Filtering and normalization</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="connector-container">
+                <div class="arrow-down"></div>
+                <div class="connection-label">Processed frames</div>
+            </div>
+
+            <!-- AI Detection Section -->
+            <div class="section" data-section="detection">
+                <div class="section-title">🤖 Intelligent Railcar Detection</div>
+                <div class="flow-row">
+                    <div class="node ai" data-info="YOLO Detection" onclick="showNodeInfo(this)">
+                        YOLOv8 Model<br><small>Railcar detection</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                    <div class="connection-label">Detection results</div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="node decision" data-info="Confidence Check" onclick="showNodeInfo(this)">
+                        Confidence ≥ 95%?
+                    </div>
+                </div>
+            </div>
+
+            <div class="connector-container">
+                <div class="arrow-down"></div>
+                <div class="connection-label yes-label">YES - Railcar detected</div>
+            </div>
+
+            <!-- Data Extraction Section -->
+            <div class="section" data-section="extraction">
+                <div class="section-title">🔍 Reporting Mark Extraction</div>
+                <div class="flow-row">
+                    <div class="flow-group">
+                        <div class="node ai" data-info="OCR Engine" onclick="showNodeInfo(this)">
+                            Specialized OCR<br><small>Serial number reading</small>
+                        </div>
+                        <div class="node processing" data-info="Validation" onclick="showNodeInfo(this)">
+                            Pattern Validation<br><small>Standard format</small>
+                        </div>
+                        <div class="node processing" data-info="Geotagging" onclick="showNodeInfo(this)">
+                            Timestamp + GPS<br><small>Camera location</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                    <div class="connection-label">Structured data</div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="node decision" data-info="Data Quality" onclick="showNodeInfo(this)">
+                        Valid and complete<br>data?
+                    </div>
+                </div>
+            </div>
+
+            <div class="connector-container">
+                <div class="arrow-down"></div>
+            </div>
+
+            <!-- Storage Section -->
+            <div class="section" data-section="storage">
+                <div class="section-title">💾 Intelligent Storage</div>
+                <div class="flow-row">
+                    <div class="flow-group">
+                        <!-- YES Branch -->
+                        <div class="flow-column">
+                            <div class="connection-label yes-label">YES - High quality</div>
+                            <div class="node processing" data-info="Complete Data" onclick="showNodeInfo(this)">
+                                Save Complete Record<br><small>Mark + image + metadata</small>
+                            </div>
+                            
+                            <div class="connector-container">
+                                <div class="arrow-down"></div>
+                            </div>
+                            
+                            <div class="flow-group">
+                                <div class="flow-column">
+                                    <div class="node database" data-info="Azure SQL" onclick="showNodeInfo(this)">
+                                        Azure SQL Database<br><small>Structured data</small>
+                                    </div>
+                                </div>
+                                <div class="flow-column">
+                                    <div class="node database" data-info="Blob Storage" onclick="showNodeInfo(this)">
+                                        Azure Blob Storage<br><small>Images + metadata</small>
+                                    </div>
+                                </div>
+                                <div class="flow-column">
+                                    <div class="node database" data-info="Search Service" onclick="showNodeInfo(this)">
+                                        Azure Search<br><small>Search index</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- NO Branch -->
+                        <div class="flow-column">
+                            <div class="connection-label no-label">NO - Low quality</div>
+                            <div class="node processing" data-info="Basic Data" onclick="showNodeInfo(this)">
+                                Basic Record<br><small>Detection only</small>
+                            </div>
+                            
+                            <div class="connector-container">
+                                <div class="arrow-down"></div>
+                            </div>
+                            
+                            <div class="flow-group">
+                                <div class="flow-column">
+                                    <div class="node database" data-info="Log Storage" onclick="showNodeInfo(this)">
+                                        Log Analytics<br><small>Basic events</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="connector-container">
+                <div class="arrow-down"></div>
+                <div class="connection-label">Data available</div>
+            </div>
+
+            <!-- User Interface Section -->
+            <div class="section" data-section="interface">
+                <div class="section-title">🖥️ User Interface and API</div>
+                <div class="flow-row">
+                    <div class="node web" data-info="Web Dashboard" onclick="showNodeInfo(this)">
+                        Web Dashboard<br><small>Analyst portal</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="flow-group">
+                        <div class="node web" data-info="Search" onclick="showNodeInfo(this)">
+                            Advanced Search<br><small>By series, date, location</small>
+                        </div>
+                        <div class="node web" data-info="Visualization" onclick="showNodeInfo(this)">
+                            Visual Gallery<br><small>Images + data</small>
+                        </div>
+                        <div class="node web" data-info="Alerts" onclick="showNodeInfo(this)">
+                            Alert Center<br><small>Real-time notifications</small>
+                        </div>
+                        <div class="node processing" data-info="API" onclick="showNodeInfo(this)">
+                            Secure API<br><small>System integration</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                    <div class="connection-label">Continuous feedback</div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="flow-group">
+                        <div class="node web" data-info="Annotations" onclick="showNodeInfo(this)">
+                            User Annotations<br><small>Manual verification</small>
+                        </div>
+                        <div class="node processing" data-info="Metrics" onclick="showNodeInfo(this)">
+                            System Metrics<br><small>KPIs and performance</small>
+                        </div>
+                        <div class="node processing" data-info="Reports" onclick="showNodeInfo(this)">
+                            Executive Reports<br><small>Trend analysis</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Panel -->
+    <div class="info-panel" id="infoPanel">
+        <h4 id="infoTitle">Component Information</h4>
+        <p id="infoDescription">Click on any component to see detailed information.</p>
+    </div>
+
+    <!-- Simulation Overlay -->
+    <div class="simulation-overlay" id="simulationOverlay">
+        <h3>
+            <span>🚂 Railytics Simulation</span>
+            <button class="mini-btn" onclick="toggleSimulation()" id="toggleBtn">⏸️</button>
+        </h3>
+        
+        <div id="simulationStatus">Starting simulation...</div>
+        
+        <div class="simulation-progress">
+            <div class="simulation-progress-bar" id="progressBar"></div>
+        </div>
+        
+        <div class="simulation-stats">
+            <div class="simulation-stat">
+                <div class="simulation-stat-label">Railcars</div>
+                <div class="simulation-stat-value" id="carsDetected">0</div>
+            </div>
+            <div class="simulation-stat">
+                <div class="simulation-stat-label">Accuracy</div>
+                <div class="simulation-stat-value" id="accuracy">97%</div>
+            </div>
+            <div class="simulation-stat">
+                <div class="simulation-stat-label">Cameras</div>
+                <div class="simulation-stat-value" id="camerasOnline">12</div>
+            </div>
+            <div class="simulation-stat">
+                <div class="simulation-stat-label">Alerts</div>
+                <div class="simulation-stat-value" id="alertsCount">3</div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 16px;">
+            <button class="mini-btn" onclick="resetSimulation()">🔄 Reset</button>
+            <button class="mini-btn" onclick="speedUpSimulation()">⚡ Speed Up</button>
+            <button class="mini-btn" onclick="closeSimulation()">❌ Close</button>
+        </div>
+    </div>
+
+    <script>
+        let animationSpeed = 1;
+        let simulationRunning = false;
+        let simulationProgress = 0;
+        let simulationStats = {
+            carsDetected: 0,
+            accuracy: 97,
+            camerasOnline: 12,
+            alertsCount: 3
+        };
+
+        // Node information database
+        const nodeInfo = {
+            'Cámaras Públicas': {
+                title: 'Cámaras de Aficionados al Ferrocarril',
+                description: 'Red de cámaras públicas de YouTube Live que transmiten en tiempo real desde ubicaciones ferroviarias estratégicas. Estas cámaras proporcionan la fuente de video sin requerir infraestructura física adicional.'
+            },
+            'Ingesta Azure': {
+                title: 'Azure Media Services',
+                description: 'Servicio de Azure que captura y procesa las transmisiones de video en tiempo real. Maneja múltiples streams simultáneamente y optimiza la calidad para el análisis posterior.'
+            },
+            'Preprocesamiento': {
+                title: 'Preprocesamiento de Frames',
+                description: 'Módulo que filtra, normaliza y prepara los frames de video para el análisis de IA. Incluye corrección de iluminación, estabilización y recorte de regiones de interés.'
+            },
+            'YOLO Detection': {
+                title: 'Modelo YOLOv8 para Detección',
+                description: 'Red neuronal avanzada entrenada específicamente para detectar vagones ferroviarios con alta precisión (≥95%). Identifica diferentes tipos de vagones y sus posiciones en tiempo real.'
+            },
+            'Confianza Check': {
+                title: 'Validación de Confianza',
+                description: 'Sistema de filtrado que asegura que solo las detecciones con confianza ≥95% pasen al siguiente paso. Reduce falsos positivos y mantiene la calidad de los datos.'
+            },
+            'OCR Engine': {
+                title: 'Motor OCR Especializado',
+                description: 'Sistema de reconocimiento óptico de caracteres especializado en leer marcas de reporte de vagones ferroviarios. Optimizado para diferentes condiciones de iluminación y ángulos.'
+            },
+            'Validación': {
+                title: 'Validación de Patrones',
+                description: 'Verifica que las marcas de reporte extraídas cumplan con los formatos estándar de la industria ferroviaria. Aplica reglas de negocio y validaciones de integridad.'
+            },
+            'Geotagging': {
+                title: 'Timestamp y Geolocalización',
+                description: 'Asocia cada detección con timestamp preciso y coordenadas GPS basadas en la ubicación conocida de cada cámara. Fundamental para el seguimiento temporal y espacial.'
+            },
+            'Calidad Datos': {
+                title: 'Control de Calidad de Datos',
+                description: 'Evalúa la completitud y validez de los datos extraídos. Determina si la información es suficientemente confiable para almacenamiento completo o básico.'
+            },
+            'Datos Completos': {
+                title: 'Registro Completo de Detección',
+                description: 'Almacena toda la información: marca de reporte, imagen del vagón, timestamp, ubicación GPS, nivel de confianza y metadatos adicionales para análisis completo.'
+            },
+            'Datos Básicos': {
+                title: 'Registro Básico de Evento',
+                description: 'Guarda información mínima cuando la calidad no permite extracción completa: timestamp, ubicación de cámara y evento de detección básico.'
+            },
+            'Azure SQL': {
+                title: 'Base de Datos Azure SQL',
+                description: 'Base de datos relacional que almacena todos los metadatos estructurados: marcas de reporte, timestamps, ubicaciones, niveles de confianza y relaciones entre detecciones.'
+            },
+            'Blob Storage': {
+                title: 'Azure Blob Storage',
+                description: 'Almacenamiento de objetos para imágenes de alta resolución de vagones detectados y archivos multimedia asociados. Optimizado para acceso rápido y escalabilidad.'
+            },
+            'Search Service': {
+                title: 'Azure Cognitive Search',
+                description: 'Índice de búsqueda inteligente que permite consultas complejas por marca de reporte, ubicación, rango temporal y otros criterios. Incluye búsqueda de texto completo.'
+            },
+            'Log Storage': {
+                title: 'Azure Log Analytics',
+                description: 'Sistema de logging centralizado para eventos del sistema, detecciones básicas y métricas de rendimiento. Fundamental para monitoreo y troubleshooting.'
+            },
+            'Web Dashboard': {
+                title: 'Dashboard Web de Analistas',
+                description: 'Interfaz web principal para analistas de operaciones. Proporciona vistas en tiempo real, herramientas de búsqueda, galería de imágenes y centro de control del sistema.'
+            },
+            'Búsqueda': {
+                title: 'Sistema de Búsqueda Avanzada',
+                description: 'Permite búsquedas complejas por número de serie, rango temporal, ubicación geográfica, tipo de vagón y otros criterios. Incluye filtros avanzados y exportación de resultados.'
+            },
+            'Visualización': {
+                title: 'Galería Visual Interactiva',
+                description: 'Muestra imágenes de vagones detectados con overlay de información. Permite zoom, navegación temporal y comparación visual para análisis detallado.'
+            },
+            'Alertas': {
+                title: 'Centro de Alertas Inteligentes',
+                description: 'Sistema de notificaciones personalizables para vagones específicos, anomalías, patrones inusuales y eventos de interés. Soporta múltiples canales de notificación.'
+            },
+            'API': {
+                title: 'API REST Segura',
+                description: 'Interfaz de programación para integración con sistemas externos. Incluye autenticación, rate limiting y endpoints para consultas, alertas y exportación de datos.'
+            },
+            'Anotaciones': {
+                title: 'Sistema de Anotaciones',
+                description: 'Permite a los usuarios verificar, corregir y anotar detecciones. Fundamental para el aprendizaje continuo del sistema y mejora de la precisión.'
+            },
+            'Métricas': {
+                title: 'Dashboard de Métricas KPI',
+                description: 'Monitorea métricas clave: precisión de detección, latencia, disponibilidad de cámaras, tasa de falsos positivos y otros indicadores de rendimiento del sistema.'
+            },
+            'Reportes': {
+                title: 'Generador de Reportes Ejecutivos',
+                description: 'Crea reportes automáticos con análisis de tendencias, patrones de tráfico, estadísticas de rendimiento y insights para la toma de decisiones estratégicas.'
+            }
+        };
+
+        function showNodeInfo(node) {
+            const info = node.getAttribute('data-info');
+            const nodeData = nodeInfo[info];
+            
+            if (nodeData) {
+                document.getElementById('infoTitle').textContent = nodeData.title;
+                document.getElementById('infoDescription').textContent = nodeData.description;
+                document.getElementById('infoPanel').classList.add('visible');
+                
+                // Add click effect
+                node.classList.add('clicked');
+                setTimeout(() => node.classList.remove('clicked'), 1000);
+            }
+        }
+
+        function highlightSection(sectionName) {
+            // Reset all sections
+            document.querySelectorAll('.section').forEach(section => {
+                section.style.borderColor = '#334155';
+                section.style.background = 'rgba(30, 41, 59, 0.3)';
+            });
+
+            if (sectionName) {
+                const section = document.querySelector(`[data-section="${sectionName}"]`);
+                if (section) {
+                    section.style.borderColor = '#3b82f6';
+                    section.style.background = 'rgba(59, 130, 246, 0.1)';
+                    section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+
+        function updateSpeed(speed) {
+            animationSpeed = parseFloat(speed);
+            document.getElementById('speedValue').textContent = speed + 'x';
+        }
+
+        function animateFlow() {
+            const nodes = document.querySelectorAll('.node');
+            const arrows = document.querySelectorAll('.arrow-down');
+            
+            // Reset animations
+            nodes.forEach(node => node.classList.remove('flow-active'));
+            arrows.forEach(arrow => arrow.classList.remove('active'));
+            
+            let delay = 0;
+            const baseDelay = 600 / animationSpeed;
+            
+            // Animate nodes sequentially with auto-scroll
+            nodes.forEach((node, index) => {
+                setTimeout(() => {
+                    node.classList.add('flow-active');
+                    
+                    // Auto-scroll to follow the current node
+                    node.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center',
+                        inline: 'nearest'
+                    });
+                    
+                    createDataParticle(node, getParticleType(index));
+                    setTimeout(() => {
+                        node.classList.remove('flow-active');
+                    }, 1200 / animationSpeed);
+                }, delay);
+                delay += baseDelay;
+            });
+            
+            // Animate arrows
+            delay = 300 / animationSpeed;
+            arrows.forEach((arrow) => {
+                setTimeout(() => {
+                    arrow.classList.add('active');
+                    setTimeout(() => {
+                        arrow.classList.remove('active');
+                    }, 1000 / animationSpeed);
+                }, delay);
+                delay += baseDelay;
+            });
+        }
+
+        function getParticleType(index) {
+            if (index < 8) return 'normal';
+            if (index < 12) return 'train-detected';
+            return 'report-mark';
+        }
+
+        function createDataParticle(node, type) {
+            for (let i = 0; i < 2; i++) {
+                setTimeout(() => {
+                    const particle = document.createElement('div');
+                    particle.className = `data-particle ${type}`;
+                    
+                    const rect = node.getBoundingClientRect();
+                    particle.style.position = 'fixed';
+                    particle.style.left = (rect.left + rect.width / 2 + (Math.random() - 0.5) * 30) + 'px';
+                    particle.style.top = (rect.top + rect.height / 2 + (Math.random() - 0.5) * 30) + 'px';
+                    particle.style.zIndex = '1500';
+                    
+                    document.body.appendChild(particle);
+                    
+                    setTimeout(() => {
+                        if (particle.parentNode) {
+                            particle.remove();
+                        }
+                    }, 2500);
+                }, i * 300);
+            }
+        }
+
+        function simulateRealTime() {
+            if (simulationRunning) {
+                stopSimulation();
+                return;
+            }
+            
+            startRealTimeSimulation();
+        }
+
+        function startRealTimeSimulation() {
+            simulationRunning = true;
+            document.getElementById('simulationOverlay').style.display = 'block';
+            document.getElementById('toggleBtn').textContent = '⏸️';
+            
+            simulationProgress = 0;
+            updateSimulationUI();
+            
+            const simulationInterval = setInterval(() => {
+                if (!simulationRunning) {
+                    clearInterval(simulationInterval);
+                    return;
+                }
+                
+                // Simulate train detection
+                if (Math.random() > 0.3) {
+                    simulationStats.carsDetected++;
+                    
+                    // Random accuracy variation
+                    simulationStats.accuracy = Math.max(95, Math.min(99, 
+                        simulationStats.accuracy + (Math.random() - 0.5) * 2));
+                }
+                
+                // Simulate camera status changes
+                if (Math.random() > 0.9) {
+                    simulationStats.camerasOnline = Math.max(8, Math.min(15, 
+                        simulationStats.camerasOnline + (Math.random() > 0.5 ? 1 : -1)));
+                }
+                
+                // Simulate alerts
+                if (Math.random() > 0.8) {
+                    simulationStats.alertsCount++;
+                    showAlert('🚨 Nuevo vagón de interés detectado: BNSF 123456');
+                }
+                
+                simulationProgress = (simulationProgress + 2) % 100;
+                updateSimulationUI();
+                
+                // Animate random nodes
+                if (Math.random() > 0.7) {
+                    const nodes = document.querySelectorAll('.node');
+                    const randomNode = nodes[Math.floor(Math.random() * nodes.length)];
+                    randomNode.classList.add('flow-active');
+                    setTimeout(() => randomNode.classList.remove('flow-active'), 800);
+                }
+                
+            }, 2000 / animationSpeed);
+        }
+
+        function updateSimulationUI() {
+            document.getElementById('progressBar').style.width = simulationProgress + '%';
+            document.getElementById('carsDetected').textContent = simulationStats.carsDetected;
+            document.getElementById('accuracy').textContent = Math.round(simulationStats.accuracy) + '%';
+            document.getElementById('camerasOnline').textContent = simulationStats.camerasOnline;
+            document.getElementById('alertsCount').textContent = simulationStats.alertsCount;
+            
+            const status = simulationRunning ? 
+                'Sistema operativo - Detectando vagones...' : 
+                'Sistema pausado';
+            document.getElementById('simulationStatus').textContent = status;
+        }
+
+        function toggleSimulation() {
+            simulationRunning = !simulationRunning;
+            document.getElementById('toggleBtn').textContent = simulationRunning ? '⏸️' : '▶️';
+            
+            if (simulationRunning) {
+                startRealTimeSimulation();
+            }
+        }
+
+        function stopSimulation() {
+            simulationRunning = false;
+            document.getElementById('simulationOverlay').style.display = 'none';
+        }
+
+        function resetSimulation() {
+            simulationStats = {
+                carsDetected: 0,
+                accuracy: 97,
+                camerasOnline: 12,
+                alertsCount: 0
+            };
+            simulationProgress = 0;
+            updateSimulationUI();
+        }
+
+        function speedUpSimulation() {
+            animationSpeed = animationSpeed >= 3 ? 0.5 : animationSpeed + 0.5;
+            document.getElementById('speedValue').textContent = animationSpeed + 'x';
+            document.getElementById('speedRange').value = animationSpeed;
+        }
+
+        function closeSimulation() {
+            stopSimulation();
+        }
+
+        function showAlert(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.style.cssText = `
+                position: fixed;
+                top: 100px;
+                right: 24px;
+                background: rgba(239, 68, 68, 0.9);
+                color: white;
+                padding: 16px 20px;
+                border-radius: 8px;
+                border: 2px solid #ef4444;
+                z-index: 3000;
+                max-width: 300px;
+                font-size: 14px;
+                font-weight: 600;
+                box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
+                transform: translateX(100%);
+                transition: transform 0.3s ease;
+            `;
+            alertDiv.textContent = message;
+            
+            document.body.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                alertDiv.style.transform = 'translateX(0)';
+            }, 100);
+            
+            setTimeout(() => {
+                alertDiv.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    if (alertDiv.parentNode) {
+                        alertDiv.remove();
+                    }
+                }, 300);
+            }, 4000);
+        }
+
+        function showMetrics() {
+            const metrics = `
+📊 RAILYTICS SYSTEM METRICS
+
+🎯 PERFORMANCE TARGETS:
+• Detection accuracy: ≥95% (Current: ${Math.round(simulationStats.accuracy)}%)
+• False positive rate: <5%
+• Detection latency: <5 seconds
+• System availability: >95%
+
+📈 CURRENT STATISTICS:
+• Railcars detected: ${simulationStats.carsDetected}
+• Online cameras: ${simulationStats.camerasOnline}/15
+• Active alerts: ${simulationStats.alertsCount}
+• Average response time: 2.3s
+
+🏆 KEY BENEFITS:
+• Coverage without physical infrastructure
+• Cost reduction vs traditional AEI
+• Real-time visibility
+• Integration with existing systems
+            `;
+            alert(metrics);
+        }
+
+        function explainSystem() {
+            const explanation = `
+🚂 RAILYTICS SYSTEM - COMPLETE EXPLANATION
+
+The Railytics system automatically detects and tracks railcars using:
+
+1️⃣ VIDEO INGESTION: Captures live feeds from public YouTube cameras without additional infrastructure.
+
+2️⃣ AI DETECTION: YOLOv8 identifies railcars with ≥95% accuracy in real-time.
+
+3️⃣ DATA EXTRACTION: Specialized OCR reads serial numbers (reporting marks) and geotags each detection.
+
+4️⃣ STORAGE: Azure SQL + Blob Storage for structured data and high-resolution images.
+
+5️⃣ USER INTERFACE: Web dashboard for analysts with advanced search, alerts, and executive reports.
+
+🎯 VALUE: Increases visibility of railway assets complementing existing AEI systems, reducing operational costs and providing scalable cloud intelligence.
+            `;
+            alert(explanation);
+        }
+
+        function showStats() {
+            const stats = `
+📊 TECHNICAL STATISTICS
+
+🔧 ARCHITECTURE:
+• Cloud: Microsoft Azure
+• AI/ML: YOLOv8 + Custom OCR  
+• Database: Azure SQL + Blob Storage
+• API: REST with secure authentication
+
+💻 PERFORMANCE:
+• Processing: Real-time (<5s latency)
+• Scalability: Multiple simultaneous streams
+• Availability: >99% uptime target
+• Accuracy: 95-99% railcar detection
+
+🌐 CAPABILITIES:
+• Multiple simultaneous cameras
+• Smart search and filters
+• Customizable alerts
+• Automatic reports
+• User annotations
+            `;
+            alert(stats);
+        }
+
+        function testAccuracy() {
+            const testResults = [
+                '🎯 Accuracy test started...',
+                '📊 Analyzing 100 test frames...',
+                '✅ Correct detections: 97/100',
+                '❌ False positives: 2/100', 
+                '⚠️ False negatives: 1/100',
+                '🏆 Accuracy achieved: 97% ✓',
+                '📈 Meets target ≥95% ✓'
+            ];
+            
+            let index = 0;
+            const interval = setInterval(() => {
+                if (index < testResults.length) {
+                    showAlert(testResults[index]);
+                    index++;
+                } else {
+                    clearInterval(interval);
+                }
+            }, 1500);
+        }
+
+        function toggleAlerts() {
+            const alertTypes = [
+                '🚨 Specific railcar detected: BNSF 789123',
+                '⚠️ Camera offline: Chicago location',
+                '📊 Detection threshold reached: 1000/day',
+                '🔍 Unusual pattern detected: Reverse train',
+                '✅ System operating optimally'
+            ];
+            
+            const randomAlert = alertTypes[Math.floor(Math.random() * alertTypes.length)];
+            showAlert(randomAlert);
+        }
+
+        function resetSystem() {
+            // Reset highlights
+            document.getElementById('sectionSelect').value = '';
+            highlightSection('');
+            
+            // Reset info panel
+            document.getElementById('infoPanel').classList.remove('visible');
+            
+            // Reset clicked states
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('clicked', 'flow-active');
+            });
+            
+            // Reset arrows
+            document.querySelectorAll('.arrow-down').forEach(arrow => {
+                arrow.classList.remove('active');
+            });
+            
+            // Reset simulation
+            stopSimulation();
+            resetSimulation();
+            
+            showAlert('🔄 System reset successfully');
+        }
+
+        // Initialize system
+        document.addEventListener('DOMContentLoaded', function() {
+            // Show welcome info
+            setTimeout(() => {
+                document.getElementById('infoPanel').classList.add('visible');
+                setTimeout(() => {
+                    document.getElementById('infoPanel').classList.remove('visible');
+                }, 5000);
+            }, 1000);
+            
+            // Auto-highlight first section briefly
+            setTimeout(() => {
+                highlightSection('ingestion');
+                setTimeout(() => {
+                    highlightSection('');
+                }, 3000);
+            }, 2000);
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key) {
+                    case 'r':
+                        e.preventDefault();
+                        resetSystem();
+                        break;
+                    case 'a':
+                        e.preventDefault();
+                        animateFlow();
+                        break;
+                    case 's':
+                        e.preventDefault();
+                        simulateRealTime();
+                        break;
+                    case 'm':
+                        e.preventDefault();
+                        showMetrics();
+                        break;
+                }
+            }
+        });
+
+        // Hide info panel when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.node') && !e.target.closest('.info-panel')) {
+                document.getElementById('infoPanel').classList.remove('visible');
+            }
+        });
+    </script>
+</body>
+</html>

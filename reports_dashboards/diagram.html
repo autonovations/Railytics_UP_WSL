@@ -1,0 +1,2026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FARM Stack Video Capture System - Interactive Flowchart</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0d1117;
+            color: #f0f6fc;
+            min-height: 100vh;
+            overflow-x: auto;
+        }
+
+        .header {
+            background: rgba(22, 27, 34, 0.8);
+            backdrop-filter: blur(12px);
+            padding: 24px;
+            text-align: center;
+            border-bottom: 1px solid #30363d;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .header h1 {
+            color: #58a6ff;
+            font-size: 2.1rem;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .header .subtitle {
+            color: #8b949e;
+            font-size: 1rem;
+            margin-bottom: 20px;
+            font-weight: 400;
+        }
+
+        .stack-info {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stack-badge {
+            background: #21262d;
+            color: #f0f6fc;
+            padding: 8px 16px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 500;
+            border: 1px solid #30363d;
+            transition: all 0.2s ease;
+        }
+
+        .stack-badge:hover {
+            background: #30363d;
+            border-color: #58a6ff;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        .btn:hover {
+            background: #2ea043;
+            transform: translateY(-1px);
+        }
+
+        .btn.secondary {
+            background: #21262d;
+            border-color: #30363d;
+        }
+
+        .btn.secondary:hover {
+            background: #30363d;
+            border-color: #58a6ff;
+        }
+
+        .flowchart-container {
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .flowchart {
+            background: #161b22;
+            border-radius: 12px;
+            padding: 40px;
+            border: 1px solid #30363d;
+            width: 100%;
+            max-width: 1200px;
+            position: relative;
+        }
+
+        /* Interactive Controls */
+        .controls-panel {
+            position: fixed;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 20px;
+            z-index: 1000;
+            width: 200px;
+        }
+
+        .controls-panel h3 {
+            color: #58a6ff;
+            font-size: 16px;
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .control-group label {
+            display: block;
+            color: #f0f6fc;
+            font-size: 14px;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .control-group select,
+        .control-group input[type="range"] {
+            width: 100%;
+            padding: 8px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #f0f6fc;
+            font-size: 14px;
+        }
+
+        .control-group input[type="range"] {
+            padding: 0;
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #30363d;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #58a6ff;
+            cursor: pointer;
+        }
+
+        .mini-btn {
+            background: #58a6ff;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            margin: 2px;
+            transition: all 0.2s ease;
+        }
+
+        .mini-btn:hover {
+            background: #79c0ff;
+        }
+
+        /* Nodes */
+        .node {
+            background: #21262d;
+            color: #f0f6fc;
+            padding: 16px 24px;
+            border-radius: 8px;
+            text-align: center;
+            position: relative;
+            margin: 8px;
+            border: 1px solid #30363d;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            font-weight: 500;
+            min-width: 160px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .node:hover {
+            transform: translateY(-2px);
+            border-color: #58a6ff;
+            box-shadow: 0 4px 12px rgba(88, 166, 255, 0.2);
+        }
+
+        .node.clicked {
+            border-color: #f85149;
+            box-shadow: 0 0 0 2px rgba(248, 81, 73, 0.2);
+        }
+
+        .node.frontend {
+            background: #1f6feb;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .node.api {
+            background: #238636;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .node.process {
+            background: #8b5cf6;
+            color: white;
+            font-weight: 500;
+        }
+
+        .node.decision {
+            background: #fb8500;
+            color: white;
+            clip-path: polygon(15% 0%, 85% 0%, 100% 50%, 85% 100%, 15% 100%, 0% 50%);
+            font-weight: 600;
+            min-width: 180px;
+        }
+
+        .node.database {
+            background: #6f42c1;
+            color: white;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .node.external {
+            background: #da3633;
+            color: white;
+            font-weight: 500;
+        }
+
+        .node.ml {
+            background: #1a7f37;
+            color: white;
+            font-weight: 500;
+        }
+
+        /* Layout */
+        .flow-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px 0;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .flow-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .flow-group {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* Connectors */
+        .connector-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 12px 0;
+            position: relative;
+        }
+
+        .arrow-down {
+            width: 2px;
+            height: 40px;
+            background: #30363d;
+            position: relative;
+            margin: 0 auto;
+            transition: all 0.3s ease;
+        }
+
+        .arrow-down.active {
+            background: #58a6ff;
+            box-shadow: 0 0 10px rgba(88, 166, 255, 0.5);
+        }
+
+        .arrow-down::after {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: -4px;
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 8px solid #30363d;
+            transition: all 0.3s ease;
+        }
+
+        .arrow-down.active::after {
+            border-top-color: #58a6ff;
+        }
+
+        /* Labels */
+        .connection-label {
+            font-size: 12px;
+            color: #8b949e;
+            background: #0d1117;
+            padding: 4px 8px;
+            border-radius: 6px;
+            margin: 6px 0;
+            font-weight: 500;
+            border: 1px solid #21262d;
+        }
+
+        .yes-label {
+            color: #238636;
+            border-color: #238636;
+        }
+
+        .no-label {
+            color: #da3633;
+            border-color: #da3633;
+        }
+
+        /* Sections */
+        .section {
+            background: rgba(33, 38, 45, 0.3);
+            border-radius: 12px;
+            padding: 24px;
+            margin: 16px 0;
+            border: 1px solid #30363d;
+            transition: all 0.3s ease;
+        }
+
+        .section:hover {
+            border-color: #58a6ff;
+        }
+
+        .section-title {
+            color: #58a6ff;
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Info Panel */
+        .info-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 16px;
+            max-width: 300px;
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+        }
+
+        .info-panel.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .info-panel h4 {
+            color: #58a6ff;
+            font-size: 14px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .info-panel p {
+            color: #8b949e;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        /* Statistics */
+        .stats-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #21262d;
+            border-top: 1px solid #30363d;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .stat-item {
+            color: #8b949e;
+        }
+
+        .stat-value {
+            color: #58a6ff;
+            font-weight: 600;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .controls-panel {
+                position: static;
+                transform: none;
+                width: 100%;
+                margin-bottom: 20px;
+            }
+            
+            .flowchart {
+                padding: 20px;
+            }
+            
+            .node {
+                min-width: 140px;
+                font-size: 13px;
+            }
+            
+            .info-panel {
+                position: static;
+                margin-top: 20px;
+                opacity: 1;
+                transform: none;
+            }
+            
+            .stats-bar {
+                position: static;
+                flex-direction: column;
+                gap: 8px;
+            }
+            
+            .simulation-overlay {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                width: auto;
+                max-width: calc(100vw - 20px);
+            }
+        }
+
+        /* Animations */
+        @keyframes nodeFlow {
+            0% { 
+                background-color: #21262d;
+                transform: scale(1);
+            }
+            50% { 
+                background-color: #58a6ff;
+                transform: scale(1.05);
+            }
+            100% { 
+                background-color: #21262d;
+                transform: scale(1);
+            }
+        }
+
+        .node.flow-active {
+            animation: nodeFlow 1s ease-in-out;
+        }
+
+        @keyframes dataFlow {
+            0% { transform: translateY(-10px); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateY(10px); opacity: 0; }
+        }
+
+        .data-particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: #58a6ff;
+            border-radius: 50%;
+            animation: dataFlow 2s linear infinite;
+            box-shadow: 0 0 10px rgba(88, 166, 255, 0.8);
+        }
+
+        .data-particle.train-detected {
+            background: #238636;
+            box-shadow: 0 0 10px rgba(35, 134, 54, 0.8);
+        }
+
+        .data-particle.ocr-data {
+            background: #f85149;
+            box-shadow: 0 0 10px rgba(248, 81, 73, 0.8);
+            width: 10px;
+            height: 10px;
+        }
+
+        .simulation-overlay {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(13, 17, 23, 0.85);
+            backdrop-filter: blur(8px);
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 16px;
+            z-index: 2000;
+            width: 280px;
+            text-align: center;
+            display: none;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            transition: all 0.3s ease;
+        }
+
+        .simulation-overlay.minimized {
+            height: 60px;
+            overflow: hidden;
+        }
+
+        .simulation-overlay.minimized .simulation-content {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .simulation-overlay h3 {
+            color: #58a6ff;
+            margin-bottom: 12px;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .minimize-btn {
+            background: none;
+            border: none;
+            color: #8b949e;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .minimize-btn:hover {
+            background: #30363d;
+            color: #f0f6fc;
+        }
+
+        .simulation-progress {
+            background: #30363d;
+            height: 8px;
+            border-radius: 4px;
+            margin: 16px 0;
+            overflow: hidden;
+        }
+
+        .simulation-progress-bar {
+            background: linear-gradient(90deg, #58a6ff, #79c0ff);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+
+        .simulation-controls {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 16px;
+        }
+
+        .simulation-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 12px 0;
+            font-size: 13px;
+        }
+
+        .simulation-stat {
+            background: #21262d;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #30363d;
+        }
+
+        .simulation-stat-label {
+            color: #8b949e;
+            font-size: 12px;
+        }
+
+        .simulation-stat-value {
+            color: #58a6ff;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .node.processing {
+            background: #58a6ff !important;
+            color: white !important;
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(88, 166, 255, 0.6);
+        }
+
+        .node.success {
+            background: #238636 !important;
+            color: white !important;
+        }
+
+        .node.error {
+            background: #f85149 !important;
+            color: white !important;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .pulse {
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        .connection-line {
+            position: absolute;
+            background: #58a6ff;
+            height: 2px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 10;
+            border-radius: 1px;
+            box-shadow: 0 0 6px rgba(88, 166, 255, 0.6);
+        }
+
+        .connection-line.active {
+            opacity: 1;
+            animation: lineFlow 1s ease-in-out;
+        }
+
+        @keyframes lineFlow {
+            0% { 
+                transform: scaleX(0);
+                transform-origin: left;
+            }
+            50% { 
+                transform: scaleX(1);
+                transform-origin: left;
+            }
+            100% { 
+                transform: scaleX(1);
+                transform-origin: right;
+            }
+        }
+
+        .simulation-type-legend {
+            background: rgba(33, 38, 45, 0.5);
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+            font-size: 11px;
+            margin: 8px 0;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            box-shadow: 0 0 6px;
+        }
+
+        .legend-dot.normal {
+            background: #58a6ff;
+            box-shadow: 0 0 6px rgba(88, 166, 255, 0.8);
+        }
+
+        .legend-dot.train-detected {
+            background: #238636;
+            box-shadow: 0 0 6px rgba(35, 134, 54, 0.8);
+        }
+
+        .legend-dot.ocr-data {
+            background: #f85149;
+            box-shadow: 0 0 6px rgba(248, 81, 73, 0.8);
+        }
+
+        .simulation-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(33, 38, 45, 0.95);
+            border: 1px solid #58a6ff;
+            border-radius: 8px;
+            padding: 12px 16px;
+            z-index: 2500;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            font-size: 14px;
+            max-width: 250px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .simulation-notification.show {
+            transform: translateX(0);
+        }
+
+        .simulation-notification.success {
+            border-color: #238636;
+            background: rgba(35, 134, 54, 0.1);
+        }
+
+        .simulation-notification.warning {
+            border-color: #fb8500;
+            background: rgba(251, 133, 0, 0.1);
+        }
+
+        .simulation-notification.error {
+            border-color: #f85149;
+            background: rgba(248, 81, 73, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>FARM Stack Video Capture System</h1>
+        <p class="subtitle">Interactive flowchart for train detection and text extraction in YouTube streams</p>
+        
+        <div class="stack-info">
+            <div class="stack-badge">FastAPI</div>
+            <div class="stack-badge">React</div>
+            <div class="stack-badge">MongoDB</div>
+            <div class="stack-badge">YOLOv8</div>
+            <div class="stack-badge">Tesseract OCR</div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn" onclick="downloadAsPDF()">📄 Download PDF</button>
+            <button class="btn secondary" onclick="downloadAsJPG()">🖼️ Download JPG</button>
+            <button class="btn secondary" onclick="animateFlow()">▶️ Animate Flow</button>
+            <button class="btn secondary" onclick="simulateDataFlow()">🔄 Simulate Data</button>
+        </div>
+    </div>
+
+    <!-- Interactive Controls Panel -->
+    <div class="controls-panel">
+        <h3>Interactive Controls</h3>
+        
+        <div class="control-group">
+            <label>Highlight Section:</label>
+            <select id="sectionSelect" onchange="highlightSection(this.value)">
+                <option value="">Select section...</option>
+                <option value="frontend">Frontend</option>
+                <option value="api">API Layer</option>
+                <option value="stream">Stream Processing</option>
+                <option value="ml">Machine Learning</option>
+                <option value="ocr">OCR Processing</option>
+                <option value="storage">Storage</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label>Animation Speed:</label>
+            <input type="range" id="speedRange" min="0.5" max="3" step="0.1" value="1" onchange="updateAnimationSpeed(this.value)">
+            <div style="font-size: 12px; color: #8b949e; text-align: center;" id="speedValue">1x</div>
+        </div>
+        
+        <div class="control-group">
+            <button class="mini-btn" onclick="resetAll()">Reset All</button>
+            <button class="mini-btn" onclick="showStats()">Show Stats</button>
+        </div>
+        
+        <div class="control-group">
+            <button class="mini-btn" onclick="explainProcess()">Explain Process</button>
+            <button class="mini-btn" onclick="showTechStack()">Tech Details</button>
+        </div>
+    </div>
+
+    <div class="flowchart-container">
+        <div class="flowchart" id="flowchart">
+            
+            <!-- Frontend Section -->
+            <div class="section" data-section="frontend">
+                <div class="section-title">Frontend - React Application</div>
+                <div class="flow-row">
+                    <div class="node frontend" data-info="React Dashboard" onclick="showNodeInfo(this)">
+                        React Web Interface<br><small>Control Dashboard</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="flow-group">
+                        <div class="node" data-info="URL Input" onclick="showNodeInfo(this)">YouTube URL Input</div>
+                        <div class="node" data-info="Capture Control" onclick="showNodeInfo(this)">Start/Stop Capture</div>
+                        <div class="node" data-info="Frame Viewer" onclick="showNodeInfo(this)">View Frames</div>
+                        <div class="node" data-info="Status Dashboard" onclick="showNodeInfo(this)">System Status</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="connector-container">
+                <div class="arrow-down"></div>
+                <div class="connection-label">HTTP API Calls</div>
+            </div>
+
+            <!-- API Section -->
+            <div class="section" data-section="api">
+                <div class="section-title">Backend - FastAPI Server</div>
+                <div class="flow-row">
+                    <div class="node api" data-info="FastAPI Server" onclick="showNodeInfo(this)">
+                        FastAPI Server<br><small>REST API Endpoints</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="flow-group">
+                        <div class="node" data-info="Start Endpoint" onclick="showNodeInfo(this)">POST<br>/start-capture</div>
+                        <div class="node" data-info="Stop Endpoint" onclick="showNodeInfo(this)">POST<br>/stop-capture</div>
+                        <div class="node" data-info="Get Frames" onclick="showNodeInfo(this)">GET<br>/frames</div>
+                        <div class="node" data-info="Delete Frame" onclick="showNodeInfo(this)">DELETE<br>/frame/{id}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="connector-container">
+                <div class="arrow-down"></div>
+                <div class="connection-label">Process Requests</div>
+            </div>
+
+            <!-- Stream Processing Section -->
+            <div class="section" data-section="stream">
+                <div class="section-title">Stream Processing Pipeline</div>
+                <div class="flow-row">
+                    <div class="node external" data-info="YouTube Stream" onclick="showNodeInfo(this)">
+                        YouTube Live Stream<br><small>Video source</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                    <div class="connection-label">Stream URL</div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="node process" data-info="yt-dlp Tool" onclick="showNodeInfo(this)">
+                        yt-dlp<br><small>Extract real stream URL</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="node process" data-info="OpenCV Capture" onclick="showNodeInfo(this)">
+                        OpenCV<br><small>Frame capture</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                    <div class="connection-label">Every 5 seconds</div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="node process" data-info="Frame Preprocessing" onclick="showNodeInfo(this)">
+                        Preprocessing<br><small>Resize & normalize</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="connector-container">
+                <div class="arrow-down"></div>
+                <div class="connection-label">Processed frame</div>
+            </div>
+
+            <!-- Machine Learning Section -->
+            <div class="section" data-section="ml">
+                <div class="section-title">AI Classification & Text Recognition</div>
+                <div class="flow-row">
+                    <div class="node ml" data-info="YOLO Model" onclick="showNodeInfo(this)">
+                        YOLOv8 Model<br><small>Object detection</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                    <div class="connection-label">Prediction results</div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="node decision" data-info="Confidence Check" onclick="showNodeInfo(this)">
+                        Train detected<br>confidence > 0.5?
+                    </div>
+                </div>
+            </div>
+
+            <div class="connector-container">
+                <div class="arrow-down"></div>
+                <div class="connection-label yes-label">YES - Continue processing</div>
+            </div>
+
+            <!-- OCR Processing Section -->
+            <div class="section" data-section="ocr">
+                <div class="section-title">Text Recognition & Analysis</div>
+                <div class="flow-row">
+                    <div class="node process" data-info="OCR Processing" onclick="showNodeInfo(this)">
+                        OCR Analysis<br><small>Extract text from frame</small>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                    <div class="connection-label">Detected text regions</div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="flow-group">
+                        <div class="node process" data-info="Text Preprocessing" onclick="showNodeInfo(this)">
+                            Text Preprocessing<br><small>Clean & normalize</small>
+                        </div>
+                        <div class="node ml" data-info="Text Recognition" onclick="showNodeInfo(this)">
+                            Tesseract OCR<br><small>Character recognition</small>
+                        </div>
+                        <div class="node process" data-info="Text Validation" onclick="showNodeInfo(this)">
+                            Text Validation<br><small>Filter relevant data</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="connector-container">
+                    <div class="arrow-down"></div>
+                    <div class="connection-label">Processed text data</div>
+                </div>
+                
+                <div class="flow-row">
+                    <div class="node decision" data-info="Text Quality Check" onclick="showNodeInfo(this)">
+                        Text quality<br>acceptable?
+                    </div>
+                </div>
+            </div>
+
+            <div class="connector-container">
+                <div class="arrow-down"></div>
+            </div>
+
+            <!-- Storage Section -->
+            <div class="section" data-section="storage">
+                <div class="section-title">Data Storage</div>
+                <div class="flow-row">
+                    <div class="flow-group">
+                        <!-- YES Branch - High Quality Text -->
+                        <div class="flow-column">
+                            <div class="connection-label yes-label">YES - High quality text</div>
+                            <div class="node process" data-info="Save Complete Data" onclick="showNodeInfo(this)">
+                                Save Complete Data<br><small>Frame + OCR results</small>
+                            </div>
+                            
+                            <div class="connector-container">
+                                <div class="arrow-down"></div>
+                            </div>
+                            
+                            <div class="flow-group">
+                                <div class="flow-column">
+                                    <div class="node database" data-info="MongoDB Enhanced" onclick="showNodeInfo(this)">
+                                        MongoDB<br><small>Metadata + OCR text</small>
+                                    </div>
+                                </div>
+                                <div class="flow-column">
+                                    <div class="node database" data-info="File System Enhanced" onclick="showNodeInfo(this)">
+                                        File System<br><small>Images + text files</small>
+                                    </div>
+                                </div>
+                                <div class="flow-column">
+                                    <div class="node database" data-info="Text Search Index" onclick="showNodeInfo(this)">
+                                        Search Index<br><small>Full-text search</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- NO Branch - Low Quality Text -->
+                        <div class="flow-column">
+                            <div class="connection-label no-label">NO - Low quality text</div>
+                            <div class="node process" data-info="Save Frame Only" onclick="showNodeInfo(this)">
+                                Save Frame Only<br><small>Basic detection data</small>
+                            </div>
+                            
+                            <div class="connector-container">
+                                <div class="arrow-down"></div>
+                        </div>
+                            
+                            <div class="flow-group">
+                                <div class="flow-column">
+                                    <div class="node database" data-info="MongoDB Storage" onclick="showNodeInfo(this)">
+                                        MongoDB<br><small>Frame metadata</small>
+                                    </div>
+                                </div>
+                                <div class="flow-column">
+                                    <div class="node database" data-info="File System" onclick="showNodeInfo(this)">
+                                        File System<br><small>Frame images</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="connector-container">
+                <div class="arrow-down"></div>
+                <div class="connection-label">Continuous loop</div>
+            </div>
+
+            <!-- Results Section -->
+            <div class="section">
+                <div class="section-title">System Output</div>
+                <div class="flow-row">
+                    <div class="flow-group">
+                        <div class="node frontend" data-info="Dashboard Update" onclick="showNodeInfo(this)">
+                            Update Dashboard<br><small>Frame counter + OCR stats</small>
+                        </div>
+                        <div class="node frontend" data-info="Frame Gallery" onclick="showNodeInfo(this)">
+                            Frame Gallery<br><small>Images + text overlay</small>
+                        </div>
+                        <div class="node frontend" data-info="Text Search" onclick="showNodeInfo(this)">
+                            Text Search Interface<br><small>Search extracted text</small>
+                        </div>
+                        <div class="node process" data-info="System Logs" onclick="showNodeInfo(this)">
+                            System Logs<br><small>Activity + OCR tracking</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Panel -->
+    <div class="info-panel" id="infoPanel">
+        <h4 id="infoTitle">Component Information</h4>
+        <p id="infoDescription">Click on any component to see detailed information.</p>
+    </div>
+
+    <!-- Statistics Bar -->
+    <div class="stats-bar">
+        <div class="stat-item">Total Nodes: <span class="stat-value" id="totalNodes">0</span></div>
+        <div class="stat-item">Interactions: <span class="stat-value" id="interactions">0</span></div>
+        <div class="stat-item">Current Section: <span class="stat-value" id="currentSection">None</span></div>
+        <div class="stat-item">Animation Speed: <span class="stat-value" id="currentSpeed">1x</span></div>
+    </div>
+
+    <!-- Simulation Overlay -->
+    <div class="simulation-overlay" id="simulationOverlay">
+        <h3>
+            <span>🔄 Data Flow Simulation</span>
+            <button class="minimize-btn" onclick="toggleMinimize()" id="minimizeBtn">📦</button>
+        </h3>
+        
+        <div class="simulation-content" id="simulationContent">
+            <div id="simulationStatus">Initializing simulation...</div>
+            
+            <div class="simulation-progress">
+                <div class="simulation-progress-bar" id="simulationProgressBar"></div>
+            </div>
+            
+            <div class="simulation-stats">
+                <div class="simulation-stat">
+                    <div class="simulation-stat-label">Frames</div>
+                    <div class="simulation-stat-value" id="framesProcessed">0</div>
+                </div>
+                <div class="simulation-stat">
+                    <div class="simulation-stat-label">Trains</div>
+                    <div class="simulation-stat-value" id="trainsDetected">0</div>
+                </div>
+                <div class="simulation-stat">
+                    <div class="simulation-stat-label">OCR</div>
+                    <div class="simulation-stat-value" id="ocrExtractions">0</div>
+                </div>
+                <div class="simulation-stat">
+                    <div class="simulation-stat-label">Success</div>
+                    <div class="simulation-stat-value" id="successRate">0%</div>
+                </div>
+            </div>
+            
+            <div class="simulation-type-legend">
+                <div class="legend-item">
+                    <div class="legend-dot normal"></div>
+                    <span>Frame Data</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot train-detected"></div>
+                    <span>Detection</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot ocr-data"></div>
+                    <span>OCR</span>
+                </div>
+            </div>
+            
+            <div class="simulation-controls">
+                <button class="mini-btn" id="pauseBtn" onclick="toggleSimulation()">⏸️</button>
+                <button class="mini-btn" onclick="stopSimulation()">⏹️</button>
+                <button class="mini-btn" onclick="speedUpSimulation()">⚡</button>
+                <button class="mini-btn" onclick="resetSimulationStats()">🔄</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let animationSpeed = 1;
+        let interactionCount = 0;
+        let currentHighlightedSection = '';
+        
+        // Simulation variables
+        let simulationRunning = false;
+        let simulationPaused = false;
+        let simulationSpeed = 1;
+        let simulationProgress = 0;
+        let simulationStep = 0;
+        let simulationStats = {
+            framesProcessed: 0,
+            trainsDetected: 0,
+            ocrExtractions: 0,
+            successRate: 0
+        };
+        let simulationInterval;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStats();
+            
+            // Auto-minimize on small screens
+            if (window.innerWidth < 768) {
+                const overlay = document.getElementById('simulationOverlay');
+                if (overlay) {
+                    overlay.classList.add('minimized');
+                    document.getElementById('minimizeBtn').textContent = '📋';
+                }
+            }
+        });
+
+        // Node information database
+        const nodeInfo = {
+            'React Dashboard': {
+                title: 'React Web Interface',
+                description: 'Main dashboard built with React providing a user-friendly interface to control the entire video capture system. Features real-time updates and responsive design.'
+            },
+            'URL Input': {
+                title: 'YouTube URL Input',
+                description: 'Form component that accepts YouTube live stream URLs. Validates URLs and prepares them for processing by the backend system.'
+            },
+            'Capture Control': {
+                title: 'Capture Control System',
+                description: 'Interactive controls to start and stop the frame capture process. Communicates with FastAPI backend through REST endpoints.'
+            },
+            'Frame Viewer': {
+                title: 'Frame Gallery Viewer',
+                description: 'Component that displays captured frames with detected trains. Includes filtering, pagination, and delete functionality.'
+            },
+            'Status Dashboard': {
+                title: 'System Status Monitor',
+                description: 'Real-time system monitoring showing capture status, frame count, detection rate, and system health metrics.'
+            },
+            'FastAPI Server': {
+                title: 'FastAPI REST API',
+                description: 'High-performance Python web framework serving as the backend API. Handles all communication between frontend and processing systems.'
+            },
+            'Start Endpoint': {
+                title: 'Start Capture Endpoint',
+                description: 'POST endpoint that initiates the video capture process. Accepts YouTube URL and starts the frame extraction pipeline.'
+            },
+            'Stop Endpoint': {
+                title: 'Stop Capture Endpoint',
+                description: 'POST endpoint that safely stops the capture process and cleans up resources.'
+            },
+            'Get Frames': {
+                title: 'Get Frames Endpoint',
+                description: 'GET endpoint that retrieves stored frames with pagination and filtering options.'
+            },
+            'Delete Frame': {
+                title: 'Delete Frame Endpoint',
+                description: 'DELETE endpoint that removes specific frames from both database and file system.'
+            },
+            'YouTube Stream': {
+                title: 'YouTube Live Stream',
+                description: 'External video source providing real-time video content. Serves as the input for the entire processing pipeline.'
+            },
+            'yt-dlp Tool': {
+                title: 'yt-dlp Stream Extractor',
+                description: 'Python library that extracts the actual video stream URL from YouTube, bypassing web interface limitations.'
+            },
+            'OpenCV Capture': {
+                title: 'OpenCV Frame Capture',
+                description: 'Computer vision library used to capture individual frames from the video stream at regular intervals.'
+            },
+            'Frame Preprocessing': {
+                title: 'Image Preprocessing',
+                description: 'Prepares frames for ML inference by resizing, normalizing pixel values, and applying necessary transformations.'
+            },
+            'YOLO Model': {
+                title: 'YOLOv8 Detection Model',
+                description: 'State-of-the-art object detection neural network trained to identify trains in video frames with high accuracy.'
+            },
+            'Confidence Check': {
+                title: 'Detection Confidence Filter',
+                description: 'Decision logic that determines whether detected objects meet the minimum confidence threshold for storage.'
+            },
+            'Save Frame': {
+                title: 'Frame Storage Process',
+                description: 'Handles the storage of positive detections, including metadata generation and file organization.'
+            },
+            'MongoDB Storage': {
+                title: 'MongoDB Database',
+                description: 'NoSQL database storing frame metadata including timestamps, detection confidence, and file references.'
+            },
+            'File System': {
+                title: 'File System Storage',
+                description: 'Local storage system for frame images, organized by date and detection results.'
+            },
+            'Discard Frame': {
+                title: 'Frame Disposal',
+                description: 'Safely discards frames that do not contain train detections to conserve storage space.'
+            },
+            'Dashboard Update': {
+                title: 'Real-time Dashboard Updates',
+                description: 'WebSocket or polling mechanism that keeps the frontend dashboard updated with latest system status.'
+            },
+            'Frame Gallery': {
+                title: 'Interactive Frame Gallery',
+                description: 'Visual component displaying all captured frames with train detections in a responsive grid layout.'
+            },
+            'System Logs': {
+                title: 'Activity Logging System',
+                description: 'Comprehensive logging system tracking all system activities, errors, performance metrics, and OCR processing statistics.'
+            },
+            'OCR Processing': {
+                title: 'OCR Analysis Engine',
+                description: 'Advanced optical character recognition system that extracts text from train frames using computer vision techniques to identify readable text regions.'
+            },
+            'Text Preprocessing': {
+                title: 'Text Region Preprocessing',
+                description: 'Prepares detected text regions for OCR by applying image enhancement techniques like noise reduction, contrast adjustment, and character segmentation.'
+            },
+            'Text Recognition': {
+                title: 'Tesseract OCR Engine',
+                description: 'Google\'s Tesseract OCR engine that converts image text to machine-readable text format with confidence scoring and language detection.'
+            },
+            'Text Validation': {
+                title: 'Text Quality Validation',
+                description: 'Validates extracted text using pattern matching, spell checking, and contextual analysis to filter out noise and improve data quality.'
+            },
+            'Text Quality Check': {
+                title: 'OCR Quality Assessment',
+                description: 'Decision logic that evaluates the quality and reliability of extracted text based on confidence scores and validation results.'
+            },
+            'Save Complete Data': {
+                title: 'Enhanced Data Storage',
+                description: 'Stores both visual frame data and extracted text information with full metadata including OCR confidence and text positioning.'
+            },
+            'Save Frame Only': {
+                title: 'Basic Frame Storage',
+                description: 'Stores only the visual frame data when OCR text quality is insufficient for reliable text extraction.'
+            },
+            'MongoDB Enhanced': {
+                title: 'Enhanced MongoDB Storage',
+                description: 'NoSQL database storing frame metadata plus extracted text data with searchable text fields and OCR confidence metrics.'
+            },
+            'File System Enhanced': {
+                title: 'Enhanced File Storage',
+                description: 'File system storing both frame images and associated text files containing extracted OCR data in structured format.'
+            },
+            'Text Search Index': {
+                title: 'Full-Text Search Index',
+                description: 'Elasticsearch or MongoDB text index enabling fast full-text search across all extracted text from train frames.'
+            },
+            'Text Search': {
+                title: 'Text Search Interface',
+                description: 'Frontend component allowing users to search through extracted text from all processed frames with filtering and highlighting capabilities.'
+            }
+        };
+
+        function showNodeInfo(node) {
+            const info = node.getAttribute('data-info');
+            const nodeData = nodeInfo[info];
+            
+            if (nodeData) {
+                document.getElementById('infoTitle').textContent = nodeData.title;
+                document.getElementById('infoDescription').textContent = nodeData.description;
+                document.getElementById('infoPanel').classList.add('visible');
+                
+                // Add click effect
+                node.classList.add('clicked');
+                setTimeout(() => node.classList.remove('clicked'), 1000);
+                
+                interactionCount++;
+                updateStats();
+            }
+        }
+
+        function highlightSection(sectionName) {
+            // Reset all sections
+            document.querySelectorAll('.section').forEach(section => {
+                section.style.borderColor = '#30363d';
+                section.style.background = 'rgba(33, 38, 45, 0.3)';
+            });
+
+            if (sectionName) {
+                const section = document.querySelector(`[data-section="${sectionName}"]`);
+                if (section) {
+                    section.style.borderColor = '#58a6ff';
+                    section.style.background = 'rgba(88, 166, 255, 0.1)';
+                    section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                currentHighlightedSection = sectionName;
+            } else {
+                currentHighlightedSection = '';
+            }
+            updateStats();
+        }
+
+        function updateAnimationSpeed(speed) {
+            animationSpeed = parseFloat(speed);
+            document.getElementById('speedValue').textContent = speed + 'x';
+            document.getElementById('currentSpeed').textContent = speed + 'x';
+            
+            // Update CSS animation duration
+            const duration = 2 / animationSpeed;
+            document.documentElement.style.setProperty('--animation-duration', duration + 's');
+        }
+
+        function updateStats() {
+            document.getElementById('totalNodes').textContent = document.querySelectorAll('.node').length;
+            document.getElementById('interactions').textContent = interactionCount;
+            document.getElementById('currentSection').textContent = currentHighlightedSection || 'None';
+        }
+
+        function resetAll() {
+            // Reset highlights
+            document.getElementById('sectionSelect').value = '';
+            highlightSection('');
+            
+            // Reset info panel
+            document.getElementById('infoPanel').classList.remove('visible');
+            
+            // Reset clicked states
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('clicked', 'flow-active');
+            });
+            
+            // Reset arrows
+            document.querySelectorAll('.arrow-down').forEach(arrow => {
+                arrow.classList.remove('active');
+            });
+            
+            // Reset interactions
+            interactionCount = 0;
+            updateStats();
+        }
+
+        function showStats() {
+            const stats = {
+                totalNodes: document.querySelectorAll('.node').length,
+                sections: document.querySelectorAll('.section').length,
+                interactions: interactionCount,
+                currentSpeed: animationSpeed
+            };
+            
+            alert(`System Statistics:\n\nTotal Nodes: ${stats.totalNodes}\nSections: ${stats.sections}\nUser Interactions: ${stats.interactions}\nAnimation Speed: ${stats.currentSpeed}x`);
+        }
+
+        function explainProcess() {
+            const explanation = `FARM Stack Video Capture Process with OCR:
+
+1. FRONTEND (React): User enters YouTube URL and controls capture
+2. API (FastAPI): REST endpoints handle requests and coordinate processes  
+3. STREAM PROCESSING: yt-dlp extracts stream, OpenCV captures frames
+4. AI CLASSIFICATION: YOLOv8 analyzes frames for train detection
+5. OCR PROCESSING: When trains detected, extract text using Tesseract
+   - Text preprocessing and enhancement
+   - Character recognition and validation
+   - Quality assessment of extracted text
+6. ENHANCED STORAGE: Save frames + OCR data to MongoDB/filesystem
+   - High quality text: Full data with search indexing
+   - Low quality text: Frame only with basic metadata
+7. ADVANCED FEEDBACK: Dashboard with frame gallery + text search
+
+This creates a complete pipeline with intelligent text extraction.`;
+            
+            alert(explanation);
+        }
+
+        function showTechStack() {
+            const techDetails = `Technology Stack Details:
+
+FRONTEND:
+• React 18+ with hooks and functional components
+• Real-time updates via WebSocket/polling
+• Responsive design with modern CSS
+• Text search interface with highlighting
+
+BACKEND:
+• FastAPI with async/await support
+• Pydantic for data validation
+• Background tasks for processing
+• OCR service integration
+
+PROCESSING:
+• yt-dlp for YouTube stream extraction
+• OpenCV for computer vision tasks
+• NumPy for array processing
+• PIL/Pillow for image manipulation
+
+MACHINE LEARNING:
+• YOLOv8 for object detection
+• PyTorch backend
+• Confidence-based filtering
+
+OCR & TEXT PROCESSING:
+• Tesseract OCR engine
+• OpenCV for text region detection
+• Image preprocessing algorithms
+• Text validation and quality assessment
+• Pattern matching for text filtering
+
+DATABASE:
+• MongoDB for metadata + OCR text storage
+• Full-text search indexing
+• File system for image storage
+• Separate text file storage for OCR results
+• Indexed queries for performance`;
+            
+            alert(techDetails);
+        }
+
+        function simulateDataFlow() {
+            if (simulationRunning) {
+                stopSimulation();
+                return;
+            }
+            
+            startSimulation();
+        }
+
+        function startSimulation() {
+            simulationRunning = true;
+            simulationPaused = false;
+            simulationProgress = 0;
+            simulationStep = 0;
+            simulationStats = {
+                framesProcessed: 0,
+                trainsDetected: 0,
+                ocrExtractions: 0,
+                successRate: 0
+            };
+            
+            // Show simulation overlay
+            document.getElementById('simulationOverlay').style.display = 'block';
+            document.getElementById('pauseBtn').innerHTML = '⏸️ Pause';
+            
+            // Reset all node states
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('processing', 'success', 'error', 'pulse');
+            });
+            
+            updateSimulationUI();
+            runSimulationStep();
+        }
+
+        function runSimulationStep() {
+            if (!simulationRunning || simulationPaused) return;
+            
+            const steps = [
+                { 
+                    name: 'Capturing YouTube Stream', 
+                    duration: 1000,
+                    nodes: ['YouTube Live Stream'],
+                    action: () => processYouTubeStream()
+                },
+                { 
+                    name: 'Extracting Stream URL', 
+                    duration: 800,
+                    nodes: ['yt-dlp Tool'],
+                    action: () => processStreamExtraction()
+                },
+                { 
+                    name: 'Capturing Frame', 
+                    duration: 600,
+                    nodes: ['OpenCV Capture'],
+                    action: () => processCaptureFrame()
+                },
+                { 
+                    name: 'Preprocessing Frame', 
+                    duration: 400,
+                    nodes: ['Frame Preprocessing'],
+                    action: () => processFramePreprocessing()
+                },
+                { 
+                    name: 'Running YOLO Detection', 
+                    duration: 1200,
+                    nodes: ['YOLOv8 Model'],
+                    action: () => processYOLODetection()
+                },
+                { 
+                    name: 'Checking Confidence', 
+                    duration: 300,
+                    nodes: ['Train detected'],
+                    action: () => processConfidenceCheck()
+                },
+                { 
+                    name: 'Processing OCR Analysis', 
+                    duration: 1500,
+                    nodes: ['OCR Analysis', 'Text Preprocessing', 'Tesseract OCR', 'Text Validation'],
+                    action: () => processOCRAnalysis()
+                },
+                { 
+                    name: 'Validating Text Quality', 
+                    duration: 500,
+                    nodes: ['Text Quality Check'],
+                    action: () => processTextQuality()
+                },
+                { 
+                    name: 'Storing Results', 
+                    duration: 800,
+                    nodes: ['Save Complete Data', 'MongoDB Enhanced', 'File System Enhanced', 'Text Search Index'],
+                    action: () => processDataStorage()
+                },
+                { 
+                    name: 'Updating Dashboard', 
+                    duration: 400,
+                    nodes: ['Update Dashboard', 'Frame Gallery', 'Text Search Interface'],
+                    action: () => processUIUpdate()
+                }
+            ];
+            
+            if (simulationStep < steps.length) {
+                const currentStep = steps[simulationStep];
+                document.getElementById('simulationStatus').textContent = currentStep.name;
+                
+                // Animate current step nodes
+                currentStep.nodes.forEach(nodeName => {
+                    const node = findNodeByText(nodeName);
+                    if (node) {
+                        node.classList.add('processing', 'pulse');
+            
+            // Create data particles
+                        createDataParticle(node, getParticleType(simulationStep));
+                    }
+                });
+                
+                                    // Execute step action
+                currentStep.action();
+                
+                // Scroll to the first active node
+                const firstNode = findNodeByText(currentStep.nodes[0]);
+                if (firstNode) {
+                    firstNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                
+                // Move to next step
+                setTimeout(() => {
+                    // Remove processing state
+                    currentStep.nodes.forEach(nodeName => {
+                        const node = findNodeByText(nodeName);
+                        if (node) {
+                            node.classList.remove('processing', 'pulse');
+                            node.classList.add('success');
+                            setTimeout(() => node.classList.remove('success'), 800);
+                        }
+                    });
+                    
+                    simulationStep++;
+                    simulationProgress = (simulationStep / steps.length) * 100;
+                    updateSimulationUI();
+                    
+                    if (simulationStep < steps.length) {
+                        runSimulationStep();
+                    } else {
+                        completeSimulation();
+                    }
+                }, currentStep.duration / simulationSpeed);
+            }
+        }
+
+        function findNodeByText(searchText) {
+            const nodes = document.querySelectorAll('.node');
+            for (let node of nodes) {
+                if (node.textContent.toLowerCase().includes(searchText.toLowerCase())) {
+                    return node;
+                }
+            }
+            return null;
+        }
+
+        function getParticleType(step) {
+            if (step <= 4) return 'normal';
+            if (step <= 6) return 'train-detected';
+            return 'ocr-data';
+        }
+
+        function createDataParticle(node, type) {
+            // Create multiple particles for more visual impact
+            for (let i = 0; i < 3; i++) {
+                setTimeout(() => {
+                    const particle = document.createElement('div');
+                    particle.className = `data-particle ${type}`;
+                    
+                    const rect = node.getBoundingClientRect();
+                    particle.style.position = 'fixed';
+                    particle.style.left = (rect.left + rect.width / 2 + (Math.random() - 0.5) * 20) + 'px';
+                    particle.style.top = (rect.top + rect.height / 2 + (Math.random() - 0.5) * 20) + 'px';
+                    particle.style.zIndex = '1500';
+                    
+                    // Add random rotation
+                    particle.style.transform = `rotate(${Math.random() * 360}deg)`;
+                    
+                    document.body.appendChild(particle);
+                    
+                    // Animate particle movement
+                    setTimeout(() => {
+                        particle.style.transition = 'all 1.5s ease-out';
+                        particle.style.transform += ` translateY(${30 + Math.random() * 40}px) scale(0.3)`;
+                        particle.style.opacity = '0';
+                    }, 100);
+                    
+                    setTimeout(() => {
+                        if (particle.parentNode) {
+                        particle.remove();
+                        }
+                    }, 1800);
+                }, i * 200);
+            }
+            
+            // Add pulsing effect to node
+            node.style.transition = 'all 0.3s ease';
+            node.style.transform = 'scale(1.1)';
+            setTimeout(() => {
+                node.style.transform = 'scale(1)';
+            }, 300);
+        }
+
+        function processYouTubeStream() {
+            simulationStats.framesProcessed++;
+            updateSimulationStats();
+        }
+
+        function processStreamExtraction() {
+            // Random processing delay simulation
+        }
+
+        function processCaptureFrame() {
+            // Frame capture simulation
+        }
+
+        function processFramePreprocessing() {
+            // Preprocessing simulation
+        }
+
+        function processYOLODetection() {
+            // 70% chance of train detection
+            if (Math.random() < 0.7) {
+                simulationStats.trainsDetected++;
+                showNotification('🚂 Train detected! Proceeding to OCR analysis...', 'success');
+            } else {
+                showNotification('❌ No train detected. Frame discarded.', 'warning');
+            }
+            updateSimulationStats();
+        }
+
+        function processConfidenceCheck() {
+            // Confidence check simulation
+        }
+
+        function processOCRAnalysis() {
+            // 80% chance of successful OCR if train detected
+            if (simulationStats.trainsDetected > 0 && Math.random() < 0.8) {
+                simulationStats.ocrExtractions++;
+                showNotification('📝 OCR text extracted successfully!', 'success');
+            } else if (simulationStats.trainsDetected > 0) {
+                showNotification('⚠️ OCR quality too low. Saving frame only.', 'warning');
+            }
+            updateSimulationStats();
+        }
+
+        function processTextQuality() {
+            // Text quality assessment
+        }
+
+        function processDataStorage() {
+            // Data storage simulation
+        }
+
+        function processUIUpdate() {
+            // UI update simulation
+        }
+
+        function updateSimulationStats() {
+            const successRate = simulationStats.framesProcessed > 0 ? 
+                Math.round((simulationStats.ocrExtractions / simulationStats.framesProcessed) * 100) : 0;
+            
+            simulationStats.successRate = successRate;
+            
+            document.getElementById('framesProcessed').textContent = simulationStats.framesProcessed;
+            document.getElementById('trainsDetected').textContent = simulationStats.trainsDetected;
+            document.getElementById('ocrExtractions').textContent = simulationStats.ocrExtractions;
+            document.getElementById('successRate').textContent = successRate + '%';
+        }
+
+        function updateSimulationUI() {
+            document.getElementById('simulationProgressBar').style.width = simulationProgress + '%';
+        }
+
+        function toggleSimulation() {
+            if (simulationRunning) {
+                simulationPaused = !simulationPaused;
+                const btn = document.getElementById('pauseBtn');
+                btn.innerHTML = simulationPaused ? '▶️ Resume' : '⏸️ Pause';
+                
+                if (!simulationPaused) {
+                    runSimulationStep();
+                }
+            }
+        }
+
+        function stopSimulation() {
+            simulationRunning = false;
+            simulationPaused = false;
+            
+            // Hide overlay
+            document.getElementById('simulationOverlay').style.display = 'none';
+            
+            // Reset all states
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('processing', 'success', 'error', 'pulse');
+            });
+            
+            // Clear intervals
+            if (simulationInterval) {
+                clearInterval(simulationInterval);
+            }
+        }
+
+        function speedUpSimulation() {
+            simulationSpeed = simulationSpeed >= 3 ? 0.5 : simulationSpeed + 0.5;
+            document.getElementById('simulationStatus').textContent += ` (${simulationSpeed}x speed)`;
+        }
+
+        function completeSimulation() {
+            document.getElementById('simulationStatus').textContent = '✅ Simulation Complete!';
+            showNotification('🎉 Simulation cycle completed! Restarting...', 'success');
+            
+                setTimeout(() => {
+                // Auto-restart simulation
+                if (simulationRunning) {
+                    simulationStep = 0;
+                    simulationProgress = 0;
+                    setTimeout(() => runSimulationStep(), 2000);
+                }
+            }, 2000);
+        }
+
+        function showNotification(message, type = 'info') {
+            // Remove existing notifications
+            const existingNotifications = document.querySelectorAll('.simulation-notification');
+            existingNotifications.forEach(notification => notification.remove());
+            
+            // Create new notification
+            const notification = document.createElement('div');
+            notification.className = `simulation-notification ${type}`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            // Show notification
+                    setTimeout(() => {
+                notification.classList.add('show');
+            }, 100);
+            
+            // Hide notification after 3 seconds
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.remove();
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        function processYouTubeStream() {
+            simulationStats.framesProcessed++;
+            if (simulationStats.framesProcessed === 1) {
+                showNotification('🎥 Starting video stream capture...', 'info');
+            }
+            updateSimulationStats();
+        }
+
+        function processDataStorage() {
+            if (simulationStats.ocrExtractions > 0) {
+                showNotification('💾 Saving frame with OCR data to database...', 'success');
+            } else {
+                showNotification('💾 Saving basic frame data...', 'info');
+            }
+        }
+
+        function resetSimulationStats() {
+            simulationStats = {
+                framesProcessed: 0,
+                trainsDetected: 0,
+                ocrExtractions: 0,
+                successRate: 0
+            };
+            updateSimulationStats();
+            showNotification('📊 Statistics reset!', 'info');
+        }
+
+        function toggleMinimize() {
+            const overlay = document.getElementById('simulationOverlay');
+            const btn = document.getElementById('minimizeBtn');
+            
+            overlay.classList.toggle('minimized');
+            
+            if (overlay.classList.contains('minimized')) {
+                btn.textContent = '📋';
+                btn.title = 'Expand simulation panel';
+            } else {
+                btn.textContent = '📦';
+                btn.title = 'Minimize simulation panel';
+            }
+        }
+
+        function animateFlow() {
+            const nodes = document.querySelectorAll('.node');
+            const arrows = document.querySelectorAll('.arrow-down');
+            
+            // Reset all animations
+            nodes.forEach(node => node.classList.remove('flow-active'));
+            arrows.forEach(arrow => arrow.classList.remove('active'));
+            
+            let delay = 0;
+            
+            // Animate nodes in sequence
+            nodes.forEach((node, index) => {
+                setTimeout(() => {
+                    node.classList.add('flow-active');
+                    // Scroll to the active node
+                    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    setTimeout(() => {
+                        node.classList.remove('flow-active');
+                    }, 1000 / animationSpeed);
+                }, delay);
+                delay += 400 / animationSpeed;
+            });
+            
+            // Animate arrows with slight offset
+            delay = 200 / animationSpeed;
+            arrows.forEach((arrow, index) => {
+                setTimeout(() => {
+                    arrow.classList.add('active');
+                    setTimeout(() => {
+                        arrow.classList.remove('active');
+                    }, 800 / animationSpeed);
+                }, delay);
+                delay += 400 / animationSpeed;
+            });
+        }
+
+        // PDF Download
+        async function downloadAsPDF() {
+            const { jsPDF } = window.jspdf;
+            const element = document.getElementById('flowchart');
+            
+            try {
+                const canvas = await html2canvas(element, {
+                    backgroundColor: '#0d1117',
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true,
+                    height: element.scrollHeight,
+                    width: element.scrollWidth
+                });
+                
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                
+                const imgWidth = 210;
+                const pageHeight = 297;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                let heightLeft = imgHeight;
+                let position = 0;
+                
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+                
+                while (heightLeft >= 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+                
+                pdf.save('farm-system-flowchart.pdf');
+            } catch (error) {
+                console.error('Error generating PDF:', error);
+                alert('Error generating PDF. Please try again.');
+            }
+        }
+        
+        // JPG Download
+        async function downloadAsJPG() {
+            const element = document.getElementById('flowchart');
+            
+            try {
+                const canvas = await html2canvas(element, {
+                    backgroundColor: '#0d1117',
+                    scale: 3,
+                    useCORS: true,
+                    allowTaint: true,
+                    height: element.scrollHeight,
+                    width: element.scrollWidth
+                });
+                
+                const link = document.createElement('a');
+                link.download = 'farm-system-flowchart.jpg';
+                link.href = canvas.toDataURL('image/jpeg', 0.9);
+                link.click();
+            } catch (error) {
+                console.error('Error generating JPG:', error);
+                alert('Error generating image. Please try again.');
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key) {
+                    case 'r':
+                        e.preventDefault();
+                        resetAll();
+                        break;
+                    case 'a':
+                        e.preventDefault();
+                        animateFlow();
+                        break;
+                    case 's':
+                        e.preventDefault();
+                        showStats();
+                        break;
+                }
+            }
+        });
+
+        // Auto-hide info panel after 10 seconds
+        let infoPanelTimer;
+        function resetInfoPanelTimer() {
+            clearTimeout(infoPanelTimer);
+            infoPanelTimer = setTimeout(() => {
+                document.getElementById('infoPanel').classList.remove('visible');
+            }, 10000);
+        }
+
+        // Show info panel on first load
+        setTimeout(() => {
+            document.getElementById('infoPanel').classList.add('visible');
+            resetInfoPanelTimer();
+        }, 1000);
+
+        // Hide info panel when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.node') && !e.target.closest('.info-panel')) {
+                document.getElementById('infoPanel').classList.remove('visible');
+            }
+        });
+    </script>
+</body>
+</html>

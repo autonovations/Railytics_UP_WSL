@@ -21,7 +21,6 @@ from ultralytics import YOLO
 import torch
 from typing import Optional, List, Dict, Set
 from contextlib import asynccontextmanager
-import pytesseract
 import easyocr
 import re
 import uuid
@@ -31,6 +30,7 @@ from fastapi.responses import StreamingResponse
 import json
 import urllib3
 import warnings
+import imageio
 
 # Suppress SSL warnings for better user experience
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -123,6 +123,12 @@ def load_yolo_model(model_path: str) -> None:
         # Move to best device
         if DEVICE_CONFIG['device'] == 'cuda':
             loaded.to(DEVICE_CONFIG['device'])
+            # Convert model to half precision (FP16)
+            try:
+                loaded.half()
+                logger.info("⚡ FP16 (half-precision) enabled for YOLO model weights")
+            except Exception as e:
+                logger.warning(f"Could not convert YOLO model weights to half precision: {e}")
             logger.info(f"YOLO model loaded successfully on {DEVICE_CONFIG['device'].upper()}")
             logger.info(f"🎯 Model device: {DEVICE_CONFIG['cuda_device_name']}")
         else:
@@ -288,15 +294,6 @@ class AnalysisSession:
             "last_frame_time": self.last_frame_time.isoformat() if self.last_frame_time else None
         }
 
-# Legacy variables for backward compatibility (will be deprecated)
-capture_active = False
-capture_thread = None
-current_stream_id = None
-frames_processed = 0
-trains_detected = 0
-frames_discarded = 0
-last_frame_time = None
-
 # WebSocket connections for real-time updates
 active_connections = []
 
@@ -379,8 +376,6 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
-    global capture_active
-    capture_active = False
     if client is not None:
         client.close()
 
@@ -591,7 +586,14 @@ def detect_trains(frame: np.ndarray) -> tuple[bool, list, np.ndarray]:
         # Read confidence threshold from environment, default 0.5
         import os as _os
         _CONF_TH = float(_os.getenv('YOLO_CONFIDENCE_THRESHOLD', '0.5'))
-        results = model(frame, verbose=False, device=DEVICE_CONFIG['device'], conf=_CONF_TH)
+        predict_args = {
+            'verbose': False,
+            'device': DEVICE_CONFIG['device'],
+            'conf': _CONF_TH
+        }
+        if DEVICE_CONFIG['device'] == 'cuda':
+            predict_args['quantize'] = 16
+        results = model(frame, **predict_args)
         
         has_trains = False
         detections = []
@@ -1024,6 +1026,7 @@ def capture_frames_multi(stream_id: str, stream_url: str, duration_minutes: int)
         max_consecutive_failures = 10  # Después de 10 fallos consecutivos, intentar refrescar URL
         
         while session.active:
+            t0 = time.time()
             ret, frame = cap.read()
             if not ret:
                 consecutive_failures += 1
@@ -1144,8 +1147,11 @@ def capture_frames_multi(stream_id: str, stream_url: str, duration_minutes: int)
                     logger.info(f"Analysis duration reached for stream {stream_id}")
                     break
             
-            # Wait for next frame based on configured interval
-            time.sleep(CAPTURE_INTERVAL_SECONDS)
+            # Wait for next frame based on configured interval (adjusted for processing time)
+            elapsed = time.time() - t0
+            sleep_time = max(0.01, CAPTURE_INTERVAL_SECONDS - elapsed)
+            logger.info(f"Stream {stream_id} - Frame {local_frames_processed} - Processing took {elapsed:.3f}s. Sleeping for {sleep_time:.3f}s.")
+            time.sleep(sleep_time)
         
         cap.release()
         logger.info(f"Frame capture completed for stream {stream_id}")
@@ -1278,222 +1284,7 @@ def check_and_close_inactive_event(stream_id: str, now: datetime):
             del active_railway_events[stream_id]
             logger.info(f"Closed Railway Event {state['event_id']} due to inactivity ({int(gap)}s)")
 
-def capture_frames(stream_url: str, duration_minutes: int):
-    """Legacy function for backward compatibility - redirects to multi-stream version"""
-    global capture_active, frames_processed, trains_detected, frames_discarded, last_frame_time, current_stream_id
-    
-    try:
-        # Open stream with enhanced configuration for YouTube/HLS streams
-        logger.info("Opening legacy stream with optimized HLS configuration...")
-        cap = create_video_capture_for_stream(stream_url)
-        
-        if not cap.isOpened():
-            logger.error("Could not open stream")
-            return
-        
-        logger.info(f"Starting frame capture every {CAPTURE_INTERVAL_SECONDS} seconds with train detection...")
-        logger.info("ONLY frames with trains will be saved")
-        start_time = datetime.now()
-        
-        # Reiniciar contadores
-        frames_processed = 0
-        trains_detected = 0
-        frames_discarded = 0
-        consecutive_failures = 0
-        
-        while capture_active:
-            ret, frame = cap.read()
-            if not ret:
-                consecutive_failures += 1
-                logger.warning(f"Could not read frame from stream (failure {consecutive_failures}) - attempting reconnection")
-                
-                # Enhanced reconnection logic with exponential backoff
-                cap.release()
-                
-                # Progressive retry delays optimized for HLS: 3s, 5s, 10s, 15s, 20s
-                retry_delays = [3, 5, 10, 15, 20]
-                reconnected = False
-                
-                for attempt, delay in enumerate(retry_delays, 1):
-                    logger.info(f"Legacy stream reconnection attempt {attempt}/{len(retry_delays)} (waiting {delay}s)")
-                    time.sleep(delay)
-                    
-                    # Use optimized function for creating VideoCapture
-                    cap = create_video_capture_for_stream(stream_url)
-                    
-                    # Test if connection works
-                    if cap.isOpened():
-                        time.sleep(1)  # Allow buffer to fill for HLS
-                        test_ret, test_frame = cap.read()
-                        if test_ret and test_frame is not None:
-                            logger.info("✅ Successfully reconnected to legacy stream")
-                            consecutive_failures = 0
-                            reconnected = True
-                            break
-                        else:
-                            logger.warning(f"Stream opened but could not read frame (attempt {attempt})")
-                            cap.release()
-                
-                if not reconnected:
-                    logger.error("❌ Failed to reconnect to legacy stream after all attempts")
-                    capture_active = False
-                    return
-                
-                continue
-            
-            # Capturar timestamp exacto
-            current_time = datetime.now()
-            last_frame_time = current_time
-            frames_processed += 1
-            
-            # Detectar trenes en el frame
-            has_trains, detections, annotated_frame = detect_trains(frame)
-            
-            if has_trains:
-                # GUARDAR: Frame contiene trenes
-                frame_doc = save_train_frame(frame, current_time, detections, annotated_frame)
-                if frame_doc:
-                    trains_detected += 1
-                    total_serials = sum(detection.get('serial_count', 0) for detection in detections)
-                    logger.info(f"✅ Frame {frames_processed} - SAVED - {len(detections)} train(s) detected, {total_serials} serials found")
-                    
-                    # Send real-time update via WebSocket
-                    update_message = {
-                        "type": "frame_detected",
-                        "frames_processed": frames_processed,
-                        "trains_detected": trains_detected,
-                        "frames_discarded": frames_discarded,
-                        "detection_count": len(detections),
-                        "serials_count": total_serials,
-                        "timestamp": current_time.isoformat()
-                    }
-                    # Note: We can't use await here in a sync function, so this will be handled by periodic updates
-            else:
-                # DESCARTAR: Frame sin trenes
-                frames_discarded += 1
-                if frames_processed % 10 == 0:  # Log cada 10 frames sin trenes
-                    logger.info(f"❌ Frame {frames_processed} - DISCARDED - No trains detected")
-            
-            # Verificar duración si está especificada
-            if duration_minutes > 0:
-                elapsed = (current_time - start_time).total_seconds() / 60
-                if elapsed >= duration_minutes:
-                    logger.info(f"Duration completed: {duration_minutes} minutes")
-                    break
-            
-            # Esperar siguiente frame según intervalo configurado
-            time.sleep(CAPTURE_INTERVAL_SECONDS)
-        
-        cap.release()
-        logger.info(f"Capture finished.")
-        logger.info(f"Frames processed: {frames_processed}")
-        logger.info(f"Frames saved (with trains): {trains_detected}")
-        logger.info(f"Frames discarded (without trains): {frames_discarded}")
-        if frames_processed > 0:
-            logger.info(f"Detection rate: {(trains_detected/frames_processed*100):.1f}%")
-        
-    except Exception as e:
-        logger.error(f"Error in frame capture: {e}")
-    finally:
-        capture_active = False
 
-@app.post("/start-capture", response_model=FrameResponse)
-async def start_capture(request: StreamRequest, background_tasks: BackgroundTasks):
-    """Inicia la captura de fotogramas del stream de YouTube cada 3 segundos (SOLO guarda frames con trenes)"""
-    global capture_active, capture_thread
-    
-    if capture_active:
-        raise HTTPException(status_code=400, detail="Capture already in progress")
-    
-    if model is None:
-        raise HTTPException(status_code=500, detail="YOLO model not available")
-    
-    try:
-        # Obtener URL del stream
-        stream_url = get_stream_url(request.youtube_url)
-        logger.info(f"Stream URL obtained: {stream_url[:100]}...")
-        
-        # Iniciar captura en hilo separado
-        capture_active = True
-        capture_thread = threading.Thread(
-            target=capture_frames,
-            args=(stream_url, request.duration_minutes),
-            daemon=True
-        )
-        capture_thread.start()
-        
-        return FrameResponse(
-            message=f"Capture started - Every 3 seconds - ONLY saves frames with trains. Duration: {'infinite' if request.duration_minutes == 0 else f'{request.duration_minutes} minutes'}. Folder: {os.path.abspath(TRAINS_FOLDER)}"
-        )
-        
-    except Exception as e:
-        capture_active = False
-        logger.error(f"Error starting capture: {e}")
-        raise HTTPException(status_code=500, detail=f"Error starting capture: {str(e)}")
-
-@app.post("/stop-capture", response_model=FrameResponse)
-async def stop_capture():
-    """Detiene la captura de fotogramas"""
-    global capture_active
-    
-    if not capture_active:
-        raise HTTPException(status_code=400, detail="No capture in progress")
-    
-    capture_active = False
-    
-    # Contar frames guardados (solo los que tienen trenes)
-    total_saved = 0
-    if collection is not None:
-        try:
-            total_saved = collection.count_documents({"has_trains": True})
-        except Exception as e:
-            logger.error(f"Error counting documents: {e}")
-    
-    return FrameResponse(
-        message="Capture stopped",
-        total_frames=frames_processed,
-        trains_detected=trains_detected,
-        frames_discarded=frames_discarded
-    )
-
-@app.get("/status")
-async def get_status():
-    """Obtiene el estado actual de la captura y estadísticas de detección"""
-    total_saved = 0
-    latest_frame = None
-    
-    if collection is not None:
-        try:
-            total_saved = collection.count_documents({"has_trains": True})
-            latest_frame = collection.find_one(sort=[("timestamp", -1)])
-        except Exception as e:
-            logger.error(f"Error querying database: {e}")
-    
-    return {
-        "capture_active": capture_active,
-        "frames_processed": frames_processed,
-        "total_frames": total_saved,
-        "frames_with_trains": total_saved,
-        "frames_discarded": frames_discarded,
-        "detection_rate": round((trains_detected / frames_processed * 100), 2) if frames_processed > 0 else 0,
-        "save_rate": round((total_saved / frames_processed * 100), 2) if frames_processed > 0 else 0,
-        "latest_frame_time": latest_frame["timestamp"] if latest_frame else last_frame_time,
-        "latest_detection_count": latest_frame.get("detection_count", 0) if latest_frame else 0,
-        "trains_folder": os.path.abspath(TRAINS_FOLDER),
-        "capture_interval": "3 seconds",
-        "storage_policy": "Only frames with trains",
-        "database_status": "connected" if collection is not None else "disconnected",
-        "yolo_model_loaded": model is not None,
-        "ocr_enabled": ocr_reader is not None,
-        "device_config": {
-            "device": DEVICE_CONFIG['device'],
-            "cuda_available": DEVICE_CONFIG['cuda_available'],
-            "cuda_device_count": DEVICE_CONFIG['cuda_device_count'],
-            "cuda_device_name": DEVICE_CONFIG['cuda_device_name'],
-            "yolo_device": DEVICE_CONFIG['yolo_device'],
-            "ocr_gpu_enabled": DEVICE_CONFIG['ocr_gpu']
-        }
-    }
 
 @app.get("/frames")
 async def get_frames(limit: int = 12, skip: int = 0, stream_id: Optional[str] = None):
@@ -1526,11 +1317,19 @@ async def get_frames(limit: int = 12, skip: int = 0, stream_id: Optional[str] = 
         except Exception as e:
             logger.error(f"Error querying frames: {e}")
     
+    # Calculate totals from active sessions
+    total_processed = 0
+    total_discarded = 0
+    with session_lock:
+        for session in active_analysis_sessions.values():
+            total_processed += session.frames_processed
+            total_discarded += session.frames_discarded
+
     return {
         "frames": frames,
         "total": total_frames,
-        "frames_processed": frames_processed,
-        "frames_discarded": frames_discarded,
+        "frames_processed": total_processed,
+        "frames_discarded": total_discarded,
         "trains_folder": os.path.abspath(TRAINS_FOLDER),
         "note": "Only frames with detected trains are shown"
     }
@@ -1835,8 +1634,14 @@ async def get_serials_stats():
         # Count unique serials
         unique_serials = list(set(all_serials))
         
+        # Calculate totals from active sessions
+        total_processed = 0
+        with session_lock:
+            for session in active_analysis_sessions.values():
+                total_processed += session.frames_processed
+
         return {
-            "total_frames_processed": frames_processed,
+            "total_frames_processed": total_processed,
             "total_frames_with_trains": len(frames_with_detections),
             "total_frames_with_serials": frames_with_serials,
             "total_serials_detected": total_serials,
@@ -2150,21 +1955,50 @@ async def get_railway_event_video(event_id: str, fps: int = 5, regenerate: bool 
                     raise HTTPException(status_code=500, detail="Failed to read event frame")
                 first_h, first_w = img.shape[:2]
 
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            writer = cv2.VideoWriter(video_path, fourcc, max(fps, 1), (first_w, first_h))
-            img = cv2.imread(valid_files[0])
-            if img is None:
-                raise HTTPException(status_code=500, detail="Failed to read event frame")
-            # Write the same frame for ~2 seconds
             repeat = max(fps * 2, 10)
-            for _ in range(repeat):
+            
+            try:
+                # Try generating using imageio with libx264
+                writer = imageio.get_writer(video_path, format='FFMPEG', mode='I', fps=max(fps, 1), codec='libx264', macro_block_size=None)
+                img = cv2.imread(valid_files[0])
+                if img is None:
+                    raise HTTPException(status_code=500, detail="Failed to read event frame")
                 if img.shape[1] != first_w or img.shape[0] != first_h:
-                    img_resized = cv2.resize(img, (first_w, first_h))
-                    writer.write(img_resized)
-                else:
-                    writer.write(img)
-            writer.release()
-            return FileResponse(path=video_path, media_type="video/mp4", filename=video_filename)
+                    img = cv2.resize(img, (first_w, first_h))
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                for _ in range(repeat):
+                    writer.append_data(img_rgb)
+                writer.close()
+                written = repeat
+            except Exception as e:
+                logger.warning(f"imageio single frame libx264 generation failed: {e}. Falling back to OpenCV mp4v.")
+                # Fallback to OpenCV VideoWriter
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                writer = cv2.VideoWriter(video_path, fourcc, max(fps, 1), (first_w, first_h))
+                img = cv2.imread(valid_files[0])
+                if img is None:
+                    raise HTTPException(status_code=500, detail="Failed to read event frame")
+                for _ in range(repeat):
+                    if img.shape[1] != first_w or img.shape[0] != first_h:
+                        img_resized = cv2.resize(img, (first_w, first_h))
+                        writer.write(img_resized)
+                    else:
+                        writer.write(img)
+                writer.release()
+                written = repeat
+
+            return FileResponse(
+                path=video_path, 
+                media_type="video/mp4", 
+                filename=video_filename,
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Content-Disposition": f"inline; filename={video_filename}",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
+                }
+            )
 
         # Build video from multiple frames
         if first_w is None or first_h is None:
@@ -2177,27 +2011,35 @@ async def get_railway_event_video(event_id: str, fps: int = 5, regenerate: bool 
         if first_w is None or first_h is None:
             raise HTTPException(status_code=500, detail="Could not determine video size from frames")
 
-        # Use H.264 codec for better web compatibility
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # Try H.264 first
-        writer = cv2.VideoWriter(video_path, fourcc, max(fps, 1), (first_w, first_h))
-        
-        # If H.264 fails, try alternative codecs
-        if not writer.isOpened():
-            logger.warning("H.264 codec failed, trying MP4V")
+        written = 0
+        try:
+            # Try generating using imageio with libx264
+            writer = imageio.get_writer(video_path, format='FFMPEG', mode='I', fps=max(fps, 1), codec='libx264', macro_block_size=None)
+            for p in valid_files:
+                img = cv2.imread(p)
+                if img is None:
+                    continue
+                if img.shape[1] != first_w or img.shape[0] != first_h:
+                    img = cv2.resize(img, (first_w, first_h))
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                writer.append_data(img_rgb)
+                written += 1
+            writer.close()
+        except Exception as e:
+            logger.warning(f"imageio libx264 generation failed: {e}. Falling back to OpenCV mp4v.")
+            # Fallback to OpenCV VideoWriter
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             writer = cv2.VideoWriter(video_path, fourcc, max(fps, 1), (first_w, first_h))
-
-        written = 0
-        for p in valid_files:
-            img = cv2.imread(p)
-            if img is None:
-                continue
-            if img.shape[1] != first_w or img.shape[0] != first_h:
-                img = cv2.resize(img, (first_w, first_h))
-            writer.write(img)
-            written += 1
-
-        writer.release()
+            written = 0
+            for p in valid_files:
+                img = cv2.imread(p)
+                if img is None:
+                    continue
+                if img.shape[1] != first_w or img.shape[0] != first_h:
+                    img = cv2.resize(img, (first_w, first_h))
+                writer.write(img)
+                written += 1
+            writer.release()
 
         if written == 0:
             # Cleanup empty file if created
@@ -2264,11 +2106,7 @@ async def delete_all_frames():
             except Exception as e:
                 logger.error(f"Error deleting from database: {e}")
         
-        # Reiniciar contadores
-        global frames_processed, trains_detected, frames_discarded
-        frames_processed = 0
-        trains_detected = 0
-        frames_discarded = 0
+
         
         return {
             "message": f"Deleted {deleted_files} files and {deleted_records} records",
@@ -2467,14 +2305,10 @@ async def delete_stream(stream_id: str):
             raise HTTPException(status_code=500, detail="Database not available")
         
         # Check if stream is currently being analyzed
-        global active_analysis_sessions, session_lock, current_stream_id, capture_active
+        global active_analysis_sessions, session_lock
         with session_lock:
             if stream_id in active_analysis_sessions and active_analysis_sessions[stream_id].active:
                 raise HTTPException(status_code=400, detail="Cannot delete stream while analysis is active")
-        
-        # Legacy check
-        if current_stream_id == stream_id and capture_active:
-            raise HTTPException(status_code=400, detail="Cannot delete stream while analysis is active")
         
         result = streams_collection.delete_one({"id": stream_id})
         
@@ -2495,7 +2329,7 @@ async def delete_stream(stream_id: str):
 @app.post("/analysis/start")
 async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):
     """Start real-time analysis of a stream (supports multiple concurrent streams)"""
-    global active_analysis_sessions, session_lock, capture_active, capture_thread, current_stream_id
+    global active_analysis_sessions, session_lock
     
     if model is None:
         raise HTTPException(status_code=500, detail="YOLO model not available")
@@ -2529,12 +2363,6 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
             active_analysis_sessions[request.stream_id] = session
             session.start()
         
-        # Maintain backward compatibility for single stream
-        if not capture_active:
-            capture_active = True
-            current_stream_id = request.stream_id
-            capture_thread = session.thread
-        
         # Broadcast start notification
         await broadcast_update({
             "type": "analysis_started",
@@ -2557,14 +2385,13 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
             if request.stream_id in active_analysis_sessions:
                 active_analysis_sessions[request.stream_id].stop()
                 del active_analysis_sessions[request.stream_id]
-        current_stream_id = None
         logger.error(f"Error starting analysis: {e}")
         raise HTTPException(status_code=500, detail=f"Error starting analysis: {str(e)}")
 
 @app.post("/analysis/stop")
 async def stop_analysis(stream_id: Optional[str] = None):
     """Stop analysis - specific stream or all if no stream_id provided"""
-    global active_analysis_sessions, session_lock, capture_active, current_stream_id
+    global active_analysis_sessions, session_lock
     
     stopped_sessions = []
     
@@ -2578,11 +2405,6 @@ async def stop_analysis(stream_id: Optional[str] = None):
             session.stop()
             stopped_sessions.append(session.to_dict())
             del active_analysis_sessions[stream_id]
-            
-            # Update legacy variables if this was the current stream
-            if current_stream_id == stream_id:
-                capture_active = False
-                current_stream_id = None
         else:
             # Stop all active analyses
             if not active_analysis_sessions:
@@ -2593,8 +2415,6 @@ async def stop_analysis(stream_id: Optional[str] = None):
                 stopped_sessions.append(session.to_dict())
             
             active_analysis_sessions.clear()
-            capture_active = False
-            current_stream_id = None
     
     # Broadcast stop notifications
     for session_data in stopped_sessions:
@@ -2611,16 +2431,19 @@ async def stop_analysis(stream_id: Optional[str] = None):
 
 @app.get("/analysis/status")
 async def get_analysis_status():
-    """Get current analysis status (legacy - returns first active stream)"""
-    global active_analysis_sessions, session_lock, capture_active, current_stream_id, frames_processed, trains_detected, frames_discarded
+    """Get current analysis status (returns first active stream)"""
+    global active_analysis_sessions, session_lock
     
-    # For backward compatibility, return first active session or legacy data
     with session_lock:
         if active_analysis_sessions:
             # Return data from first active session
             first_session = next(iter(active_analysis_sessions.values()))
             return {
                 "active": first_session.active,
+                "capture_active": first_session.active,
+                "yolo_model_loaded": model is not None,
+                "ocr_enabled": ocr_reader is not None,
+                "database_status": "connected" if collection is not None else "disconnected",
                 "stream_id": first_session.stream_id,
                 "stream_name": first_session.stream_name,
                 "frames_processed": first_session.frames_processed,
@@ -2629,24 +2452,18 @@ async def get_analysis_status():
                 "detection_rate": first_session.detection_rate
             }
     
-    # Legacy fallback
-    stream_name = "Unknown"
-    if current_stream_id and streams_collection:
-        try:
-            stream = streams_collection.find_one({"id": current_stream_id})
-            if stream:
-                stream_name = stream["name"]
-        except:
-            pass
-    
     return {
-        "active": capture_active,
-        "stream_id": current_stream_id,
-        "stream_name": stream_name,
-        "frames_processed": frames_processed,
-        "trains_detected": trains_detected,
-        "frames_discarded": frames_discarded,
-        "detection_rate": round((trains_detected / frames_processed * 100), 2) if frames_processed > 0 else 0
+        "active": False,
+        "capture_active": False,
+        "yolo_model_loaded": model is not None,
+        "ocr_enabled": ocr_reader is not None,
+        "database_status": "connected" if collection is not None else "disconnected",
+        "stream_id": None,
+        "stream_name": None,
+        "frames_processed": 0,
+        "trains_detected": 0,
+        "frames_discarded": 0,
+        "detection_rate": 0.0
     }
 
 @app.get("/analysis/sessions")

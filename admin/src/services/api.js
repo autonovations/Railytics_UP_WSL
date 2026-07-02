@@ -59,15 +59,5 @@ export const analysisAPI = {
   getSessions: async () => {
     const response = await axios.get(`${API_URL}/analysis/sessions`);
     return response.data;
-  },
-
-  startAnalysis: async (streamId) => {
-    const response = await axios.post(`${API_URL}/analysis/start/${streamId}`);
-    return response.data;
-  },
-
-  stopAnalysis: async (sessionId) => {
-    const response = await axios.post(`${API_URL}/analysis/stop/${sessionId}`);
-    return response.data;
   }
 };

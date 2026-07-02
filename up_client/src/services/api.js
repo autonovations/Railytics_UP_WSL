@@ -25,38 +25,7 @@ api.interceptors.response.use(
   }
 );
 
-export const getStatus = async () => {
-  try {
-    const { data } = await api.get('/status');
-    return data;
-  } catch (error) {
-    console.error('Error getting status:', error);
-    throw error;
-  }
-};
 
-export const startCapture = async ({ youtube_url, duration_minutes = 1440 }) => {
-  try {
-    const { data } = await api.post('/start-capture', {
-      youtube_url,
-      duration_minutes,
-    });
-    return data;
-  } catch (error) {
-    console.error('Error starting capture:', error);
-    throw error;
-  }
-};
-
-export const stopCapture = async () => {
-  try {
-    const { data } = await api.post('/stop-capture');
-    return data;
-  } catch (error) {
-    console.error('Error stopping capture:', error);
-    throw error;
-  }
-};
 
 export const getFrames = async (page = 1, limit = 12, streamFilter = '') => {
   try {
@@ -86,15 +55,7 @@ export const deleteAllFrames = async () => {
   }
 };
 
-// New utility functions for better error handling
-export const checkServerConnection = async () => {
-  try {
-    await api.get('/status');
-    return true;
-  } catch (error) {
-    return false;
-  }
-};
+
 
 export const getFrameImageUrl = (filename) => {
   return `${API_BASE}/frame/${filename}`;

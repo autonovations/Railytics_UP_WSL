@@ -40,7 +40,6 @@ pydantic>=2.5.0
 pydantic_core>=2.14.1
 pymongo>=4.6.0
 pyparsing>=3.2.3
-pytesseract>=0.3.10
 python-bidi>=0.6.6
 python-dateutil>=2.9.0.post0
 python-dotenv>=1.1.1

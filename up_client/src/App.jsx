@@ -78,7 +78,7 @@ function App() {
   const menuItems = [
     { label: 'STREAM SELECTION', icon: <VideoCallIcon />, index: 0 },
     { label: 'REAL-TIME ANALYSIS', icon: <AnalyticsIcon />, index: 1 },
-    { label: 'DASHBOARD', icon: <DashboardIcon />, index: 2 },
+    { label: 'RAILWAY EVENTS', icon: <DashboardIcon />, index: 2 },
     { label: 'FRAME GALLERY', icon: <PhotoLibraryIcon />, index: 3 }
   ];
 

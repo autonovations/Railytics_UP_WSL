@@ -303,8 +303,6 @@ try:
 except Exception:
     model = None
 
-ocr_reader = None
-
 # Global references for async loop
 main_loop = None
 
@@ -503,61 +501,6 @@ async def set_model_targets(req: ModelTargetsRequest):
     except Exception as e:
         logger.error(f"Error setting model targets: {e}")
         return {"status": "error", "error": str(e)}
-
-        
-        # Extract region from image
-        x1, y1, x2, y2 = [int(coord) for coord in bbox]
-        
-        # Add padding to capture text near edges
-        padding = 20
-        h, w = image.shape[:2]
-        x1 = max(0, x1 - padding)
-        y1 = max(0, y1 - padding)
-        x2 = min(w, x2 + padding)
-        y2 = min(h, y2 + padding)
-        
-        # Extract region
-        region = image[y1:y2, x1:x2]
-        
-        if region.size == 0:
-            return []
-        
-        # Preprocess region for better OCR
-        # Convert to grayscale
-        if len(region.shape) == 3:
-            gray_region = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        else:
-            gray_region = region
-        
-        # Apply contrast enhancement
-        enhanced_region = cv2.convertScaleAbs(gray_region, alpha=1.5, beta=0)
-        
-        # Use EasyOCR to extract text (with synchronization lock)
-        with ocr_lock:
-            ocr_results = ocr_reader.readtext(enhanced_region)
-        
-        serials = []
-        for (bbox_ocr, text, confidence) in ocr_results:
-            # Filter for potential serial numbers (confidence threshold)
-            if confidence > 0.5:
-                # Clean and validate text
-                cleaned_text = re.sub(r'[^A-Z0-9]', '', text.upper())
-                
-                # Look for patterns that could be serial numbers
-                # Common patterns: letters + numbers, only numbers, etc.
-                if len(cleaned_text) >= 3 and any(char.isdigit() for char in cleaned_text):
-                    serials.append({
-                        'text': text.strip(),
-                        'cleaned_text': cleaned_text,
-                        'confidence': round(confidence, 3),
-                        'bbox_relative': bbox_ocr
-                    })
-        
-        return serials
-        
-    except Exception as e:
-        logger.error(f"Error extracting serials from region: {e}")
-        return []
 
 def detect_trains(frame: np.ndarray) -> tuple[bool, list, np.ndarray]:
     """
@@ -1072,7 +1015,7 @@ def capture_frames_multi(stream_id: str, stream_url: str, duration_minutes: int)
                 frame_doc = save_train_frame(frame, current_time, detections, annotated_frame, stream_id)
                 if frame_doc:
                     local_trains_detected += 1
-                    logger.info(f"✅ Stream {stream_id} - Frame {local_frames_processed} - SAVED - {len(detections)} train(s) detected. Queueing OCR...")
+                    logger.info(f"✅ Stream {stream_id} - Frame {local_frames_processed} - SAVED - {len(detections)} train(s) detected.")
 
                     # Update Railway Events aggregation (initially empty reporting marks)
                     try:
@@ -1091,7 +1034,7 @@ def capture_frames_multi(stream_id: str, stream_url: str, duration_minutes: int)
                     
 
                     
-                    # Send real-time update via WebSocket (OCR serials_count will be 0 initially)
+                    # Send real-time update via WebSocket (OCR serials_count is 0 since OCR is disabled)
                     update_message = {
                         "type": "frame_detected",
                         "stream_id": stream_id,
@@ -1497,8 +1440,8 @@ async def get_device_info():
         device_info['model_status'] = {
             'yolo_loaded': model is not None,
             'yolo_device': yolo_device,
-            'ocr_loaded': ocr_reader is not None,
-            'ocr_gpu_active': DEVICE_CONFIG['ocr_gpu'] and ocr_reader is not None,
+            'ocr_loaded': False,
+            'ocr_gpu_active': False,
             'model_path': MODEL_PATH,
             'labels_count': len(MODEL_LABELS),
             'target_class_ids': TRAIN_CLASSES,

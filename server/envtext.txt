@@ -36,7 +36,6 @@ EVENT_VIDEOS_FOLDER=event_videos
 # =============================================================================
 # Specific model paths (if not set, falls back to YOLO_MODEL_PATH)
 RAILCAR_DETECTOR_PATH=yolo_railcars.pt
-REPORTING_MARKS_OCR_PATH=
 CAR_TYPE_CLASSIFIER_PATH=
 
 # Target labels for detection (comma-separated, e.g., "Reporting Mark,train,railcar")

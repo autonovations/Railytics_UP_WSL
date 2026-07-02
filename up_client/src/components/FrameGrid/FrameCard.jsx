@@ -113,20 +113,6 @@ const FrameCard = ({ frame, onImageClick }) => {
             />
           </Box>
 
-          {/* Serials information */}
-          {hasTrains && frame.total_serials !== undefined && (
-            <Box mt={1}>
-              <Chip
-                icon={<QrCode />}
-                label={`${frame.total_serials || 0} Reporting Marks`}
-                color={frame.total_serials > 0 ? 'primary' : 'default'}
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: '0.7rem' }}
-              />
-            </Box>
-          )}
-
           {/* Additional info for frames with trains */}
           {hasTrains && frame.detections && frame.detections.length > 0 && (
             <Box mt={1}>

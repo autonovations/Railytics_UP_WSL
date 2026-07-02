@@ -81,25 +81,27 @@ export const getFrameCropUrl = (filename, options = {}) => {
   return `${API_BASE}/frame/${filename}/crop${query ? `?${query}` : ''}`;
 };
 
-// New OCR/Serials related functions
+// New OCR/Serials related functions (Stubbed out since OCR is removed)
 export const getFrameSerials = async (filename) => {
-  try {
-    const { data } = await api.get(`/frame/${filename}/serials`);
-    return data;
-  } catch (error) {
-    console.error('Error getting frame serials:', error);
-    throw error;
-  }
+  return {
+    filename,
+    total_trains: 0,
+    total_serials: 0,
+    trains_with_serials: []
+  };
 };
 
 export const getSerialsStats = async () => {
-  try {
-    const { data } = await api.get('/serials/stats');
-    return data;
-  } catch (error) {
-    console.error('Error getting serials stats:', error);
-    throw error;
-  }
+  return {
+    total_frames_processed: 0,
+    total_frames_with_trains: 0,
+    total_frames_with_serials: 0,
+    total_serials_detected: 0,
+    unique_serials_count: 0,
+    unique_serials: [],
+    average_serials_per_frame: 0,
+    serial_detection_rate: 0
+  };
 };
 
 export const getRailcarTypes = async () => {
@@ -165,42 +167,50 @@ export const ensureRailwayEventVideo = async (eventId, options = {}) => {
   try {
     console.log(`Ensuring video for event ${eventId} with options:`, options);
     
-    // Use HEAD request to check/generate video without downloading
-    const response = await api.head(`/railway-events/${eventId}/video`, { 
+    // Call the video endpoint. If it returns 200, it's ready. If it returns 202, it is compiling.
+    const response = await api.get(`/railway-events/${eventId}/video`, { 
       params: options,
-      timeout: 60000 // 60 seconds for video generation
+      timeout: 15000 // 15 seconds to initiate
     });
     
-    if (response.status !== 200) {
-      throw new Error(`Failed to generate video. Server responded with status: ${response.status}`);
+    if (response.status === 200) {
+      const url = getRailwayEventVideoUrl(eventId, options);
+      console.log(`Video was already cached for event ${eventId}. URL: ${url}`);
+      return url;
     }
     
-    const url = getRailwayEventVideoUrl(eventId, options);
-    console.log(`Video ensured successfully for event ${eventId}. URL: ${url}`);
-    return url;
+    if (response.status === 202) {
+      console.log(`Video compilation started for event ${eventId}. Polling status...`);
+      
+      // Poll /railway-events/${eventId}/video/status every 2 seconds
+      let attempts = 0;
+      const maxAttempts = 45; // 90 seconds max
+      
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        attempts++;
+        
+        try {
+          const statusRes = await api.get(`/railway-events/${eventId}/video/status`);
+          if (statusRes.data.status === 'completed') {
+            const url = getRailwayEventVideoUrl(eventId, options);
+            console.log(`Video compiled successfully for event ${eventId}. URL: ${url}`);
+            return url;
+          } else if (statusRes.data.status === 'failed') {
+            throw new Error(`Video compilation failed: ${statusRes.data.error || 'unknown error'}`);
+          }
+          console.log(`Still compiling... attempt ${attempts}/${maxAttempts}`);
+        } catch (pollErr) {
+          console.error(`Error polling status:`, pollErr);
+        }
+      }
+      
+      throw new Error(`Timeout waiting for video compilation to finish`);
+    }
+    
+    throw new Error(`Failed to generate video. Server responded with status: ${response.status}`);
   } catch (error) {
     console.error('Error ensuring railway event video:', error);
-    
-    // If HEAD fails, try a simple GET to generate the video
-    if (error.response?.status === 405 || error.code === 'ERR_BAD_REQUEST') {
-      console.log('HEAD request failed, trying GET request as fallback...');
-      try {
-        const response = await api.get(`/railway-events/${eventId}/video`, { 
-          params: options,
-          timeout: 60000,
-          responseType: 'stream' // Don't download the entire video
-        });
-        
-        if (response.status === 200) {
-          const url = getRailwayEventVideoUrl(eventId, options);
-          console.log(`Video generated successfully via GET fallback for event ${eventId}`);
-          return url;
-        }
-      } catch (fallbackError) {
-        console.error('GET fallback also failed:', fallbackError);
-      }
-    }
-    
     throw error;
   }
 };

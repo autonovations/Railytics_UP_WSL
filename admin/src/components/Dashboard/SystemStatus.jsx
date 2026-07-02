@@ -423,7 +423,7 @@ const SystemStatus = () => {
                 📊 System Statistics
               </Typography>
               <Grid container spacing={2}>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid item xs={12} sm={4}>
                   <Card variant="outlined">
                     <CardContent sx={{ textAlign: 'center' }}>
                       <Typography variant="h4" color="primary">
@@ -436,7 +436,7 @@ const SystemStatus = () => {
                   </Card>
                 </Grid>
 
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid item xs={12} sm={4}>
                   <Card variant="outlined">
                     <CardContent sx={{ textAlign: 'center' }}>
                       <Typography variant="h4" color="primary">
@@ -449,20 +449,7 @@ const SystemStatus = () => {
                   </Card>
                 </Grid>
 
-                <Grid item xs={12} sm={6} md={3}>
-                  <Card variant="outlined">
-                    <CardContent sx={{ textAlign: 'center' }}>
-                      <Typography variant="h4" color="primary">
-                        {serialsStats?.unique_serials?.length || 0}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Unique Serials
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid item xs={12} sm={4}>
                   <Card variant="outlined">
                     <CardContent sx={{ textAlign: 'center' }}>
                       <Typography variant="h4" color="primary">

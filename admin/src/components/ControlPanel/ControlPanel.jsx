@@ -70,7 +70,6 @@ const ControlPanel = () => {
         <br />
         <Typography variant="body2" color={getStatusColor()}>
           YOLO Model: {status.yolo_model_loaded ? '✅ Loaded' : '❌ Not Available'} |
-          OCR: {status.ocr_enabled ? '✅ Enabled' : '❌ Not Available'} |
           Database: {status.database_status === 'connected' ? '✅ Connected' : '❌ Disconnected'}
         </Typography>
       </Alert>

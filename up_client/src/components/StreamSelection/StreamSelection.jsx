@@ -507,7 +507,6 @@ const StreamSelection = () => {
               <strong>Analysis Configuration:</strong><br />
               • Captures frames every 3 seconds<br />
               • Only frames with detected trains are saved<br />
-              • Serial numbers are automatically extracted<br />
               • Real-time updates will be available during analysis
             </Typography>
           </Alert>

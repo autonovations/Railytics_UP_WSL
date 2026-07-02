@@ -123,8 +123,7 @@ const DetectionTable = () => {
 
   // Filter detections based on search term
   const filteredDetections = detectionsData?.detections?.filter(detection =>
-    detection.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    detection.reporting_mark.toLowerCase().includes(searchTerm.toLowerCase())
+    detection.location.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
 
   if (error) {
@@ -161,7 +160,7 @@ const DetectionTable = () => {
           {/* Search and Info */}
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
             <TextField
-              placeholder="Buscar por ubicación o número serial..."
+              placeholder="Buscar por ubicación..."
               value={searchTerm}
               onChange={handleSearchChange}
               variant="outlined"
@@ -201,12 +200,6 @@ const DetectionTable = () => {
                 color="primary"
                 variant="outlined"
               />
-              <Chip
-                icon={<BadgeIcon />}
-                label={`${filteredDetections.filter(d => d.reporting_mark !== 'not registered').length} con serial`}
-                color="success"
-                variant="outlined"
-              />
             </Box>
           )}
         </Box>
@@ -242,12 +235,6 @@ const DetectionTable = () => {
                       <strong>Timestamp</strong>
                     </Box>
                   </TableCell>
-                  <TableCell>
-                    <Box display="flex" alignItems="center">
-                      <BadgeIcon sx={{ mr: 1, fontSize: 18 }} />
-                      <strong>Reporting Mark</strong>
-                    </Box>
-                  </TableCell>
                   <TableCell align="center">
                     <strong>Confidence</strong>
                   </TableCell>
@@ -259,7 +246,7 @@ const DetectionTable = () => {
               <TableBody>
                 {filteredDetections.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                    <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
                       <Typography variant="body1" color="text.secondary">
                         {searchTerm ? 'No se encontraron detecciones que coincidan con la búsqueda' : 'No hay detecciones disponibles'}
                       </Typography>
@@ -318,9 +305,6 @@ const DetectionTable = () => {
                         <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
                           {formatTimestamp(detection.timestamp)}
                         </Typography>
-                      </TableCell>
-                      <TableCell>
-                        {getReportingMarkChip(detection.reporting_mark, detection.confidence)}
                       </TableCell>
                       <TableCell align="center">
                         {detection.confidence !== undefined && (

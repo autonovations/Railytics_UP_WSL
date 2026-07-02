@@ -90,7 +90,6 @@ const EventFramesPage = () => {
                   <TableCell align="center">Railcars</TableCell>
                   <TableCell>Railcar Type</TableCell>
                   <TableCell align="center">Reporting Mark section</TableCell>
-                  <TableCell>Recognized text</TableCell>
                   <TableCell>Railcar Condition</TableCell>
                   <TableCell>Quality image</TableCell>
                 </TableRow>
@@ -132,11 +131,11 @@ const EventFramesPage = () => {
                   if (avgConf >= 0.8) railcarCondition = 'Good';
                   else if (avgConf >= 0.6) railcarCondition = 'Fair';
 
-                  // Image quality based on best serial confidence (OCR proxy)
+                  // Image quality based on average railcar detection confidence
                   let qualityLabel = 'N/A';
-                  if (bestSerialConfidence > 0) {
-                    if (bestSerialConfidence >= 0.8) qualityLabel = 'High';
-                    else if (bestSerialConfidence >= 0.6) qualityLabel = 'Medium';
+                  if (avgConf > 0) {
+                    if (avgConf >= 0.8) qualityLabel = 'High';
+                    else if (avgConf >= 0.6) qualityLabel = 'Medium';
                     else qualityLabel = 'Low';
                   }
                   return (
@@ -154,9 +153,6 @@ const EventFramesPage = () => {
                         ) : (
                           <Typography variant="body2" color="text.secondary">—</Typography>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        {firstText ? <Chip size="small" label={firstText} color="secondary" variant="outlined" /> : <Typography variant="body2" color="text.secondary">—</Typography>}
                       </TableCell>
                       <TableCell>{railcarCondition}</TableCell>
                       <TableCell>{qualityLabel}</TableCell>

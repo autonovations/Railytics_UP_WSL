@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from fastapi.concurrency import run_in_threadpool
+import queue
 import cv2
 import numpy as np
 import pymongo
@@ -21,7 +23,6 @@ from ultralytics import YOLO
 import torch
 from typing import Optional, List, Dict, Set
 from contextlib import asynccontextmanager
-import easyocr
 import re
 import uuid
 import requests
@@ -47,11 +48,10 @@ logger = logging.getLogger(__name__)
 
 # Device configuration for GPU/CPU selection
 def get_device_config():
-    """Determine the best device configuration for YOLO and OCR"""
+    """Determine the best device configuration for YOLO"""
     device_info = {
         'device': 'cpu',
         'yolo_device': 'cpu',
-        'ocr_gpu': False,
         'cuda_available': False,
         'cuda_device_count': 0,
         'cuda_device_name': None
@@ -63,7 +63,6 @@ def get_device_config():
             device_info['cuda_device_count'] = torch.cuda.device_count()
             device_info['device'] = 'cuda'
             device_info['yolo_device'] = 'cuda'
-            device_info['ocr_gpu'] = True
             
             # Get GPU device name
             if device_info['cuda_device_count'] > 0:
@@ -71,7 +70,7 @@ def get_device_config():
                 
             logger.info(f"🚀 GPU detected: {device_info['cuda_device_name']}")
             logger.info(f"🔥 CUDA devices available: {device_info['cuda_device_count']}")
-            logger.info("⚡ Using GPU acceleration for YOLO and OCR")
+            logger.info("⚡ Using GPU acceleration for YOLO")
         else:
             logger.info("💻 GPU not available, using CPU")
             logger.info("⚠️  For better performance, install CUDA-compatible PyTorch")
@@ -304,31 +303,24 @@ try:
 except Exception:
     model = None
 
-# Inicializar EasyOCR
-try:
-    ocr_reader = easyocr.Reader(['en'], gpu=DEVICE_CONFIG['ocr_gpu'])
-    if DEVICE_CONFIG['ocr_gpu']:
-        logger.info("EasyOCR reader initialized successfully with GPU acceleration")
-        logger.info(f"📝 OCR device: {DEVICE_CONFIG['cuda_device_name']}")
-    else:
-        logger.info("EasyOCR reader initialized successfully on CPU")
-        
-except Exception as e:
-    logger.error(f"Error initializing EasyOCR with GPU: {e}")
-    # Fallback to CPU if GPU initialization fails
-    try:
-        logger.info("🔄 Attempting EasyOCR fallback to CPU...")
-        ocr_reader = easyocr.Reader(['en'], gpu=False)
-        logger.info("EasyOCR reader initialized successfully on CPU (fallback)")
-    except Exception as e2:
-        logger.error(f"Error initializing EasyOCR on CPU: {e2}")
-        ocr_reader = None
+ocr_reader = None
+
+# Global references for async loop
+main_loop = None
+
+# Video generation status dictionary
+video_generation_statuses = {}
+video_generation_lock = threading.Lock()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
     # Startup
+    global main_loop
     try:
+        main_loop = asyncio.get_running_loop()
+        
         # Crear carpetas si no existen
         os.makedirs(TRAINS_FOLDER, exist_ok=True)
         
@@ -363,7 +355,7 @@ async def lifespan(app: FastAPI):
             logger.info(f"🔧 Performance Configuration:")
             logger.info(f"   - Device: {DEVICE_CONFIG['device'].upper()}")
             logger.info(f"   - YOLO device: {DEVICE_CONFIG['yolo_device'].upper()}")
-            logger.info(f"   - OCR GPU: {'ON' if DEVICE_CONFIG['ocr_gpu'] else 'OFF'}")
+
             if DEVICE_CONFIG['cuda_available']:
                 logger.info(f"   - GPU: {DEVICE_CONFIG['cuda_device_name']}")
                 logger.info(f"   - CUDA devices: {DEVICE_CONFIG['cuda_device_count']}")
@@ -376,6 +368,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
+
     if client is not None:
         client.close()
 
@@ -511,14 +504,6 @@ async def set_model_targets(req: ModelTargetsRequest):
         logger.error(f"Error setting model targets: {e}")
         return {"status": "error", "error": str(e)}
 
-def extract_serials_from_region(image: np.ndarray, bbox: list) -> list:
-    """
-    Extract serial numbers from a specific region using OCR
-    bbox format: [x1, y1, x2, y2]
-    """
-    try:
-        if ocr_reader is None:
-            return []
         
         # Extract region from image
         x1, y1, x2, y2 = [int(coord) for coord in bbox]
@@ -547,8 +532,9 @@ def extract_serials_from_region(image: np.ndarray, bbox: list) -> list:
         # Apply contrast enhancement
         enhanced_region = cv2.convertScaleAbs(gray_region, alpha=1.5, beta=0)
         
-        # Use EasyOCR to extract text
-        ocr_results = ocr_reader.readtext(enhanced_region)
+        # Use EasyOCR to extract text (with synchronization lock)
+        with ocr_lock:
+            ocr_results = ocr_reader.readtext(enhanced_region)
         
         serials = []
         for (bbox_ocr, text, confidence) in ocr_results:
@@ -617,16 +603,14 @@ def detect_trains(frame: np.ndarray) -> tuple[bool, list, np.ndarray]:
                         else:
                             x1, y1, x2, y2 = bbox_tensor.tolist()
                         
-                        # Extract serials from this train region
-                        serials = extract_serials_from_region(frame, [x1, y1, x2, y2])
-                        
+                        # OCR is extracted asynchronously in background worker
                         detections.append({
                             'class': cls,
                             'confidence': conf,
                             'bbox': [x1, y1, x2, y2],
                             'class_name': MODEL_LABELS.get(cls, str(cls)),
-                            'serials': serials,
-                            'serial_count': len(serials)
+                            'serials': [],
+                            'serial_count': 0
                         })
         
         # Crear frame anotado si hay detecciones
@@ -1088,10 +1072,9 @@ def capture_frames_multi(stream_id: str, stream_url: str, duration_minutes: int)
                 frame_doc = save_train_frame(frame, current_time, detections, annotated_frame, stream_id)
                 if frame_doc:
                     local_trains_detected += 1
-                    total_serials = sum(detection.get('serial_count', 0) for detection in detections)
-                    logger.info(f"✅ Stream {stream_id} - Frame {local_frames_processed} - SAVED - {len(detections)} train(s) detected, {total_serials} serials found")
+                    logger.info(f"✅ Stream {stream_id} - Frame {local_frames_processed} - SAVED - {len(detections)} train(s) detected. Queueing OCR...")
 
-                    # Update Railway Events aggregation
+                    # Update Railway Events aggregation (initially empty reporting marks)
                     try:
                         update_railway_event(stream_id, session.stream_name, current_time, detections, frame_doc)
                     except Exception as e:
@@ -1106,7 +1089,9 @@ def capture_frames_multi(stream_id: str, stream_url: str, duration_minutes: int)
                                 frames_discarded=local_frames_discarded
                             )
                     
-                    # Send real-time update via WebSocket
+
+                    
+                    # Send real-time update via WebSocket (OCR serials_count will be 0 initially)
                     update_message = {
                         "type": "frame_detected",
                         "stream_id": stream_id,
@@ -1115,11 +1100,12 @@ def capture_frames_multi(stream_id: str, stream_url: str, duration_minutes: int)
                         "trains_detected": local_trains_detected,
                         "frames_discarded": local_frames_discarded,
                         "detection_count": len(detections),
-                        "serials_count": total_serials,
+                        "serials_count": 0,
                         "detection_rate": round((local_trains_detected / local_frames_processed) * 100, 2) if local_frames_processed > 0 else 0,
                         "timestamp": current_time.isoformat()
                     }
-                    asyncio.run(broadcast_update(update_message))
+                    if main_loop is not None and main_loop.is_running():
+                        asyncio.run_coroutine_threadsafe(broadcast_update(update_message), main_loop)
             else:
                 # DISCARD: Frame without trains
                 local_frames_discarded += 1
@@ -1165,23 +1151,18 @@ def capture_frames_multi(stream_id: str, stream_url: str, duration_minutes: int)
                 active_analysis_sessions[stream_id].active = False
         
         # Broadcast stop notification
-        asyncio.run(broadcast_update({
-            "type": "analysis_stopped",
-            "stream_id": stream_id,
-            "stream_name": session.stream_name if session else "Unknown"
-        }))
+        if main_loop is not None and main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(broadcast_update({
+                "type": "analysis_stopped",
+                "stream_id": stream_id,
+                "stream_name": session.stream_name if session else "Unknown"
+            }), main_loop)
 
 # =================== RAILWAY EVENTS AGGREGATION ===================
 
 def _extract_reporting_marks_from_detections(detections: list) -> list:
     """Extract cleaned reporting marks from detections."""
-    reporting_marks = []
-    for detection in detections or []:
-        for serial in detection.get('serials', []) or []:
-            mark = serial.get('cleaned_text') or serial.get('text')
-            if mark:
-                reporting_marks.append(mark)
-    return reporting_marks
+    return []
 
 def update_railway_event(stream_id: str, stream_name: str, timestamp: datetime, detections: list, frame_doc: dict):
     """Create or update a Railway Event for a given stream.
@@ -1287,7 +1268,7 @@ def check_and_close_inactive_event(stream_id: str, now: datetime):
 
 
 @app.get("/frames")
-async def get_frames(limit: int = 12, skip: int = 0, stream_id: Optional[str] = None):
+def get_frames(limit: int = 12, skip: int = 0, stream_id: Optional[str] = None):
     """Obtiene lista de fotogramas guardados (solo los que contienen trenes)"""
     frames = []
     total_frames = 0
@@ -1334,52 +1315,18 @@ async def get_frames(limit: int = 12, skip: int = 0, stream_id: Optional[str] = 
         "note": "Only frames with detected trains are shown"
     }
 
-@app.get("/frame/{filename}/serials")
-async def get_frame_serials(filename: str):
-    """Get detailed serial information for a specific frame"""
-    try:
-        if collection is None:
-            raise HTTPException(status_code=500, detail="Database not available")
-        
-        frame_doc = collection.find_one({"filename": filename})
-        if not frame_doc:
-            raise HTTPException(status_code=404, detail="Frame not found")
-        
-        # Extract serial information
-        serials_summary = []
-        total_serials = 0
-        
-        if 'detections' in frame_doc:
-            for i, detection in enumerate(frame_doc['detections']):
-                if 'serials' in detection:
-                    train_serials = detection['serials']
-                    total_serials += len(train_serials)
-                    serials_summary.append({
-                        'train_index': i + 1,
-                        'train_bbox': detection['bbox'],
-                        'train_confidence': detection['confidence'],
-                        'serials': train_serials,
-                        'serial_count': len(train_serials)
-                    })
-        
-        return {
-            "filename": filename,
-            "timestamp": frame_doc.get("timestamp"),
-            "total_trains": len(frame_doc.get('detections', [])),
-            "total_serials": total_serials,
-            "trains_with_serials": serials_summary
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting frame serials: {e}")
-        raise HTTPException(status_code=500, detail=f"Error getting frame serials: {str(e)}")
 
 @app.get("/frame/{filename}")
-async def get_frame_image(filename: str):
+def get_frame_image(filename: str):
     """Obtiene una imagen específica por su nombre de archivo"""
     try:
-        filepath = os.path.join(TRAINS_FOLDER, filename)
+        # Prevent Path Traversal
+        safe_base = os.path.abspath(TRAINS_FOLDER)
+        filepath = os.path.abspath(os.path.join(safe_base, filename))
         
+        if not filepath.startswith(safe_base):
+            raise HTTPException(status_code=403, detail="Access denied")
+            
         if not os.path.exists(filepath):
             raise HTTPException(status_code=404, detail="Frame not found")
         
@@ -1388,6 +1335,8 @@ async def get_frame_image(filename: str):
             media_type="image/jpeg",
             filename=filename
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=404, detail="Frame not found")
 
@@ -1591,77 +1540,13 @@ def get_performance_recommendations(device_info):
         recommendations.append("⚠️ GPU not available - install CUDA-compatible PyTorch for better performance")
         recommendations.append("💡 Consider upgrading to a system with dedicated GPU for real-time processing")
         
-    if not device_info.get('ocr_gpu', False):
-        recommendations.append("📝 OCR is running on CPU - GPU acceleration may improve text recognition speed")
+
         
     return recommendations
 
-@app.get("/serials/stats")
-async def get_serials_stats():
-    """Get general statistics about detected serials"""
-    try:
-        if collection is None:
-            return {
-                "message": "Database not available",
-                "total_frames_with_serials": 0,
-                "total_serials_detected": 0,
-                "average_serials_per_frame": 0,
-                "unique_serials": []
-            }
-        
-        # Get all frames with detections
-        frames_with_detections = list(collection.find(
-            {"has_trains": True, "detections": {"$exists": True}},
-            {"detections": 1, "timestamp": 1}
-        ))
-        
-        total_serials = 0
-        frames_with_serials = 0
-        all_serials = []
-        
-        for frame in frames_with_detections:
-            frame_has_serials = False
-            for detection in frame.get('detections', []):
-                if 'serials' in detection and detection['serials']:
-                    frame_has_serials = True
-                    for serial in detection['serials']:
-                        total_serials += 1
-                        all_serials.append(serial['cleaned_text'])
-            
-            if frame_has_serials:
-                frames_with_serials += 1
-        
-        # Count unique serials
-        unique_serials = list(set(all_serials))
-        
-        # Calculate totals from active sessions
-        total_processed = 0
-        with session_lock:
-            for session in active_analysis_sessions.values():
-                total_processed += session.frames_processed
-
-        return {
-            "total_frames_processed": total_processed,
-            "total_frames_with_trains": len(frames_with_detections),
-            "total_frames_with_serials": frames_with_serials,
-            "total_serials_detected": total_serials,
-            "unique_serials_count": len(unique_serials),
-            "unique_serials": sorted(unique_serials),
-            "average_serials_per_frame": round(total_serials / frames_with_serials, 2) if frames_with_serials > 0 else 0,
-            "serial_detection_rate": round((frames_with_serials / len(frames_with_detections) * 100), 2) if frames_with_detections else 0,
-            "model": {
-                "path": MODEL_PATH,
-                "target_class_ids": TRAIN_CLASSES,
-                "target_class_names": [MODEL_LABELS.get(i, str(i)) for i in TRAIN_CLASSES]
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting serials stats: {e}")
-        raise HTTPException(status_code=500, detail=f"Error getting serials stats: {str(e)}")
 
 @app.get("/detections")
-async def get_detections(limit: int = 50, skip: int = 0):
+def get_detections(limit: int = 50, skip: int = 0):
     """Get all detections in tabular format with location, timestamp, and reporting_mark"""
     try:
         if collection is None or streams_collection is None:
@@ -1756,7 +1641,7 @@ async def get_detections(limit: int = 50, skip: int = 0):
         raise HTTPException(status_code=500, detail=f"Error getting detections: {str(e)}")
 
 @app.get("/railway-events")
-async def get_railway_events(limit: int = 20, skip: int = 0, stream_id: Optional[str] = None):
+def get_railway_events(limit: int = 20, skip: int = 0, stream_id: Optional[str] = None):
     """List Railway Events with pagination and optional stream filter."""
     try:
         if events_collection is None:
@@ -1780,7 +1665,7 @@ async def get_railway_events(limit: int = 20, skip: int = 0, stream_id: Optional
         raise HTTPException(status_code=500, detail=f"Error getting railway events: {str(e)}")
 
 @app.get("/railway-events/{event_id}")
-async def get_railway_event(event_id: str):
+def get_railway_event(event_id: str):
     """Get details for a single Railway Event."""
     try:
         if events_collection is None:
@@ -1796,7 +1681,7 @@ async def get_railway_event(event_id: str):
         raise HTTPException(status_code=500, detail=f"Error getting railway event: {str(e)}")
 
 @app.get("/railway-events/{event_id}/frames")
-async def get_railway_event_frames(event_id: str, limit: int = 24, skip: int = 0):
+def get_railway_event_frames(event_id: str, limit: int = 24, skip: int = 0):
     """Return frames-with-trains that belong to a specific Railway Event.
 
     Frames are resolved by matching the `stream_id` and filtering by the event
@@ -1869,47 +1754,22 @@ async def get_railway_event_frames(event_id: str, limit: int = 24, skip: int = 0
         logger.error(f"Error getting frames for railway event: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting frames for railway event: {str(e)}")
 
-@app.get("/railway-events/{event_id}/video")
-@app.head("/railway-events/{event_id}/video")
-async def get_railway_event_video(event_id: str, fps: int = 5, regenerate: bool = False):
-    """Generate (if needed) and return a video for the specified Railway Event.
-
-    The video is composed from the annotated frames saved during the event window.
-    """
+def compile_video_task(event_id: str, fps: int):
+    global video_generation_statuses
     try:
-        if events_collection is None:
-            raise HTTPException(status_code=500, detail="Database not available")
-
-        # Fetch event
+        logger.info(f"Starting background video compilation for event {event_id}")
+        if events_collection is None or collection is None:
+            raise RuntimeError("Database not available")
+            
         event = events_collection.find_one({"id": event_id}, {"_id": 0})
         if not event:
-            raise HTTPException(status_code=404, detail="Event not found")
+            raise RuntimeError("Event not found")
 
-        # Target video path
         video_filename = f"event_{event_id}.mp4"
         video_path = os.path.join(EVENT_VIDEOS_FOLDER, video_filename)
 
-        # If exists and not forced to regenerate, return file
-        if os.path.exists(video_path) and not regenerate:
-            return FileResponse(
-                path=video_path, 
-                media_type="video/mp4", 
-                filename=video_filename,
-                headers={
-                    "Accept-Ranges": "bytes",
-                    "Content-Disposition": f"inline; filename={video_filename}",
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
-                    "Expires": "0"
-                }
-            )
-
-        # Collect all frame filenames within event window
         start_time = event.get("start_time")
         end_time = event.get("end_time") or datetime.now()
-
-        if collection is None:
-            raise HTTPException(status_code=500, detail="Database not available")
 
         cursor = collection.find(
             {
@@ -1921,11 +1781,8 @@ async def get_railway_event_video(event_id: str, fps: int = 5, regenerate: bool 
         ).sort("timestamp", 1)
 
         frames_meta = list(cursor)
-
-        # Filter out missing files and find first valid frame for size
         valid_files = []
-        first_w = None
-        first_h = None
+        first_w, first_h = None, None
 
         for fm in frames_meta:
             filename = fm.get("filename")
@@ -1939,132 +1796,111 @@ async def get_railway_event_video(event_id: str, fps: int = 5, regenerate: bool 
                 if img is None:
                     continue
                 first_h, first_w = img.shape[:2]
-                valid_files.append(frame_path)
-            else:
-                valid_files.append(frame_path)
+            valid_files.append(frame_path)
 
         if not valid_files:
-            raise HTTPException(status_code=404, detail="No frames available for this event")
+            raise RuntimeError("No frames available for this event")
 
-        # Handle single frame: duplicate a few times for short clip
+        written = 0
         if len(valid_files) == 1:
-            # Ensure dimensions are known
-            if first_w is None or first_h is None:
-                img = cv2.imread(valid_files[0])
-                if img is None:
-                    raise HTTPException(status_code=500, detail="Failed to read event frame")
-                first_h, first_w = img.shape[:2]
-
             repeat = max(fps * 2, 10)
-            
             try:
-                # Try generating using imageio with libx264
                 writer = imageio.get_writer(video_path, format='FFMPEG', mode='I', fps=max(fps, 1), codec='libx264', macro_block_size=None)
                 img = cv2.imread(valid_files[0])
                 if img is None:
-                    raise HTTPException(status_code=500, detail="Failed to read event frame")
-                if img.shape[1] != first_w or img.shape[0] != first_h:
-                    img = cv2.resize(img, (first_w, first_h))
+                    raise RuntimeError("Failed to read event frame")
                 img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 for _ in range(repeat):
                     writer.append_data(img_rgb)
                 writer.close()
                 written = repeat
             except Exception as e:
-                logger.warning(f"imageio single frame libx264 generation failed: {e}. Falling back to OpenCV mp4v.")
-                # Fallback to OpenCV VideoWriter
+                logger.warning(f"Background video imageio single frame failed, fallback to OpenCV: {e}")
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                 writer = cv2.VideoWriter(video_path, fourcc, max(fps, 1), (first_w, first_h))
                 img = cv2.imread(valid_files[0])
-                if img is None:
-                    raise HTTPException(status_code=500, detail="Failed to read event frame")
-                for _ in range(repeat):
-                    if img.shape[1] != first_w or img.shape[0] != first_h:
-                        img_resized = cv2.resize(img, (first_w, first_h))
-                        writer.write(img_resized)
-                    else:
-                        writer.write(img)
-                writer.release()
-                written = repeat
-
-            return FileResponse(
-                path=video_path, 
-                media_type="video/mp4", 
-                filename=video_filename,
-                headers={
-                    "Accept-Ranges": "bytes",
-                    "Content-Disposition": f"inline; filename={video_filename}",
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
-                    "Expires": "0"
-                }
-            )
-
-        # Build video from multiple frames
-        if first_w is None or first_h is None:
-            # Determine size from first readable image
-            for p in valid_files:
-                img = cv2.imread(p)
                 if img is not None:
-                    first_h, first_w = img.shape[:2]
-                    break
-        if first_w is None or first_h is None:
-            raise HTTPException(status_code=500, detail="Could not determine video size from frames")
-
-        written = 0
-        try:
-            # Try generating using imageio with libx264
-            writer = imageio.get_writer(video_path, format='FFMPEG', mode='I', fps=max(fps, 1), codec='libx264', macro_block_size=None)
-            for p in valid_files:
-                img = cv2.imread(p)
-                if img is None:
-                    continue
-                if img.shape[1] != first_w or img.shape[0] != first_h:
-                    img = cv2.resize(img, (first_w, first_h))
-                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                writer.append_data(img_rgb)
-                written += 1
-            writer.close()
-        except Exception as e:
-            logger.warning(f"imageio libx264 generation failed: {e}. Falling back to OpenCV mp4v.")
-            # Fallback to OpenCV VideoWriter
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            writer = cv2.VideoWriter(video_path, fourcc, max(fps, 1), (first_w, first_h))
-            written = 0
-            for p in valid_files:
-                img = cv2.imread(p)
-                if img is None:
-                    continue
-                if img.shape[1] != first_w or img.shape[0] != first_h:
-                    img = cv2.resize(img, (first_w, first_h))
-                writer.write(img)
-                written += 1
-            writer.release()
+                    for _ in range(repeat):
+                        writer.write(img)
+                    written = repeat
+                writer.release()
+        else:
+            try:
+                writer = imageio.get_writer(video_path, format='FFMPEG', mode='I', fps=max(fps, 1), codec='libx264', macro_block_size=None)
+                for p in valid_files:
+                    img = cv2.imread(p)
+                    if img is None:
+                        continue
+                    if img.shape[1] != first_w or img.shape[0] != first_h:
+                        img = cv2.resize(img, (first_w, first_h))
+                    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    writer.append_data(img_rgb)
+                    written += 1
+                writer.close()
+            except Exception as e:
+                logger.warning(f"Background video imageio failed, fallback to OpenCV: {e}")
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                writer = cv2.VideoWriter(video_path, fourcc, max(fps, 1), (first_w, first_h))
+                written = 0
+                for p in valid_files:
+                    img = cv2.imread(p)
+                    if img is None:
+                        continue
+                    if img.shape[1] != first_w or img.shape[0] != first_h:
+                        img = cv2.resize(img, (first_w, first_h))
+                    writer.write(img)
+                    written += 1
+                writer.release()
 
         if written == 0:
-            # Cleanup empty file if created
-            try:
-                if os.path.exists(video_path):
-                    os.remove(video_path)
-            except:
-                pass
-            raise HTTPException(status_code=500, detail="Failed to compose video from frames")
-        
-        # Validate the generated video file
-        if not os.path.exists(video_path):
-            raise HTTPException(status_code=500, detail="Video file was not created successfully")
-        
-        file_size = os.path.getsize(video_path)
-        if file_size == 0:
-            try:
-                os.remove(video_path)
-            except:
-                pass
-            raise HTTPException(status_code=500, detail="Generated video file is empty")
-        
-        logger.info(f"Video validation passed: {video_filename} ({file_size} bytes)")
+            raise RuntimeError("Failed to compose video from frames")
 
-        logger.info(f"Generated event video: {video_filename} with {written} frames at {fps} FPS")
+        if not os.path.exists(video_path) or os.path.getsize(video_path) == 0:
+            raise RuntimeError("Generated video file is missing or empty")
+
+        with video_generation_lock:
+            video_generation_statuses[event_id] = {
+                "status": "completed",
+                "video_path": video_path,
+                "completed_at": datetime.now().isoformat()
+            }
+        logger.info(f"Background video compilation completed for event {event_id}")
+
+    except Exception as e:
+        logger.error(f"Error compiling video in background for event {event_id}: {e}")
+        with video_generation_lock:
+            video_generation_statuses[event_id] = {
+                "status": "failed",
+                "error": str(e),
+                "failed_at": datetime.now().isoformat()
+            }
+
+@app.get("/railway-events/{event_id}/video")
+@app.head("/railway-events/{event_id}/video")
+def get_railway_event_video(event_id: str, background_tasks: BackgroundTasks, response: Response, fps: int = 5, regenerate: bool = False):
+    """Generate (if needed) and return a video for the specified Railway Event.
+
+    This generates the video in the background to prevent blocking the API.
+    """
+    global video_generation_statuses
+    
+    if events_collection is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+
+    event = events_collection.find_one({"id": event_id})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    video_filename = f"event_{event_id}.mp4"
+    video_path = os.path.join(EVENT_VIDEOS_FOLDER, video_filename)
+
+    if os.path.exists(video_path) and not regenerate:
+        with video_generation_lock:
+            status_info = video_generation_statuses.get(event_id)
+            if status_info and status_info["status"] == "generating":
+                response.status_code = 202
+                return {"status": "generating", "message": "Video is currently compiling in the background"}
+        
         return FileResponse(
             path=video_path, 
             media_type="video/mp4", 
@@ -2077,14 +1913,57 @@ async def get_railway_event_video(event_id: str, fps: int = 5, regenerate: bool 
                 "Expires": "0"
             }
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating railway event video: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generating railway event video: {str(e)}")
+
+    with video_generation_lock:
+        status_info = video_generation_statuses.get(event_id)
+        if status_info and status_info["status"] == "generating":
+            response.status_code = 202
+            return {"status": "generating", "message": "Video is currently compiling in the background"}
+
+        video_generation_statuses[event_id] = {
+            "status": "generating",
+            "started_at": datetime.now().isoformat()
+        }
+        background_tasks.add_task(compile_video_task, event_id, fps)
+        
+    response.status_code = 202
+    return {"status": "generating", "message": "Video compilation started in the background"}
+
+@app.get("/railway-events/{event_id}/video/status")
+def get_railway_event_video_status(event_id: str):
+    """Check the status of a background video compilation task"""
+    global video_generation_statuses
+    
+    if events_collection is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+        
+    event = events_collection.find_one({"id": event_id})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+        
+    video_filename = f"event_{event_id}.mp4"
+    video_path = os.path.join(EVENT_VIDEOS_FOLDER, video_filename)
+    
+    if os.path.exists(video_path):
+        with video_generation_lock:
+            status_info = video_generation_statuses.get(event_id)
+            if not status_info or status_info["status"] != "generating":
+                return {"status": "completed", "video_ready": True}
+                
+    with video_generation_lock:
+        status_info = video_generation_statuses.get(event_id)
+        if status_info:
+            return {
+                "status": status_info["status"],
+                "video_ready": status_info["status"] == "completed",
+                "error": status_info.get("error"),
+                "details": status_info
+            }
+            
+    return {"status": "not_started", "video_ready": False}
 
 @app.delete("/frames")
-async def delete_all_frames():
+def delete_all_frames():
     """Elimina todos los fotogramas guardados (archivos locales y metadatos)"""
     try:
         deleted_files = 0
@@ -2120,7 +1999,7 @@ async def delete_all_frames():
 # === STREAM MANAGEMENT ENDPOINTS ===
 
 @app.post("/streams/preview")
-async def preview_stream(request: dict):
+def preview_stream(request: dict):
     """Preview YouTube stream metadata before creating"""
     try:
         url = request.get('url', '').strip()
@@ -2151,7 +2030,7 @@ async def preview_stream(request: dict):
         raise HTTPException(status_code=400, detail=f"Error previewing stream: {str(e)}")
 
 @app.post("/streams")
-async def create_stream(request: StreamCreateRequest):
+def create_stream(request: StreamCreateRequest):
     """Create a new stream for analysis"""
     try:
         if streams_collection is None:
@@ -2202,7 +2081,7 @@ async def create_stream(request: StreamCreateRequest):
         raise HTTPException(status_code=500, detail=f"Error creating stream: {str(e)}")
 
 @app.get("/streams")
-async def get_streams(active_only: bool = True):
+def get_streams(active_only: bool = True):
     """Get all available streams"""
     try:
         if streams_collection is None:
@@ -2224,7 +2103,7 @@ async def get_streams(active_only: bool = True):
         raise HTTPException(status_code=500, detail=f"Error getting streams: {str(e)}")
 
 @app.get("/streams/{stream_id}")
-async def get_stream(stream_id: str):
+def get_stream(stream_id: str):
     """Get a specific stream by ID"""
     try:
         if streams_collection is None:
@@ -2243,7 +2122,7 @@ async def get_stream(stream_id: str):
         raise HTTPException(status_code=500, detail=f"Error getting stream: {str(e)}")
 
 @app.put("/streams/{stream_id}")
-async def update_stream(stream_id: str, request: StreamUpdateRequest):
+def update_stream(stream_id: str, request: StreamUpdateRequest):
     """Update a stream"""
     try:
         if streams_collection is None:
@@ -2298,7 +2177,7 @@ async def update_stream(stream_id: str, request: StreamUpdateRequest):
         raise HTTPException(status_code=500, detail=f"Error updating stream: {str(e)}")
 
 @app.delete("/streams/{stream_id}")
-async def delete_stream(stream_id: str):
+def delete_stream(stream_id: str):
     """Delete a stream"""
     try:
         if streams_collection is None:
@@ -2339,7 +2218,7 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
         if streams_collection is None:
             raise HTTPException(status_code=500, detail="Database not available")
         
-        stream = streams_collection.find_one({"id": request.stream_id, "active": True})
+        stream = await run_in_threadpool(streams_collection.find_one, {"id": request.stream_id, "active": True})
         if not stream:
             raise HTTPException(status_code=404, detail="Stream not found or not active")
         
@@ -2349,7 +2228,7 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
                 raise HTTPException(status_code=400, detail=f"Analysis already in progress for stream: {stream['name']}")
         
         # Get stream URL
-        stream_url = get_stream_url(stream["url"])
+        stream_url = await run_in_threadpool(get_stream_url, stream["url"])
         logger.info(f"Starting analysis for stream: {stream['name']}")
         
         # Create and start analysis session
@@ -2394,6 +2273,7 @@ async def stop_analysis(stream_id: Optional[str] = None):
     global active_analysis_sessions, session_lock
     
     stopped_sessions = []
+    sessions_to_stop = []
     
     with session_lock:
         if stream_id:
@@ -2402,19 +2282,20 @@ async def stop_analysis(stream_id: Optional[str] = None):
                 raise HTTPException(status_code=400, detail=f"No analysis in progress for stream: {stream_id}")
             
             session = active_analysis_sessions[stream_id]
-            session.stop()
-            stopped_sessions.append(session.to_dict())
+            sessions_to_stop.append(session)
             del active_analysis_sessions[stream_id]
         else:
             # Stop all active analyses
             if not active_analysis_sessions:
                 raise HTTPException(status_code=400, detail="No analysis in progress")
             
-            for session in active_analysis_sessions.values():
-                session.stop()
-                stopped_sessions.append(session.to_dict())
-            
+            sessions_to_stop = list(active_analysis_sessions.values())
             active_analysis_sessions.clear()
+            
+    # Now stop them outside the lock, using run_in_threadpool
+    for session in sessions_to_stop:
+        await run_in_threadpool(session.stop)
+        stopped_sessions.append(session.to_dict())
     
     # Broadcast stop notifications
     for session_data in stopped_sessions:
@@ -2442,7 +2323,7 @@ async def get_analysis_status():
                 "active": first_session.active,
                 "capture_active": first_session.active,
                 "yolo_model_loaded": model is not None,
-                "ocr_enabled": ocr_reader is not None,
+                "ocr_enabled": False,
                 "database_status": "connected" if collection is not None else "disconnected",
                 "stream_id": first_session.stream_id,
                 "stream_name": first_session.stream_name,
@@ -2456,7 +2337,7 @@ async def get_analysis_status():
         "active": False,
         "capture_active": False,
         "yolo_model_loaded": model is not None,
-        "ocr_enabled": ocr_reader is not None,
+        "ocr_enabled": False,
         "database_status": "connected" if collection is not None else "disconnected",
         "stream_id": None,
         "stream_name": None,

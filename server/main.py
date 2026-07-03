@@ -95,6 +95,9 @@ ENV_TARGET_LABELS_RAW: str | None = os.getenv("YOLO_TARGET_LABELS")  # e.g. "tra
 MODEL_LABELS: Dict[int, str] = {}
 TRAIN_CLASSES: List[int] = []  # Dynamic target class ids used as "train" in detection
 
+# Thread lock for thread-safe model usage
+model_lock = threading.Lock()
+
 def _parse_target_labels(raw: str | None) -> List[str]:
     if not raw:
         return []
@@ -133,38 +136,39 @@ def load_yolo_model(model_path: str) -> None:
         else:
             logger.info("YOLO model loaded successfully on CPU")
 
-        # Update globals atomically
-        model = loaded
-        MODEL_PATH = model_path
-        try:
-            # Ultralytics models expose names as a dict {class_id: name}
-            MODEL_LABELS = dict(model.names) if hasattr(model, 'names') else {}
-        except Exception:
-            MODEL_LABELS = {}
+        # Ultralytics models expose names as a dict {class_id: name}
+        local_labels = dict(loaded.names) if hasattr(loaded, 'names') else {}
 
         # Compute target classes
         env_targets = _parse_target_labels(ENV_TARGET_LABELS_RAW)
-        resolved_env_ids = _resolve_class_ids_from_labels(env_targets, MODEL_LABELS)
+        resolved_env_ids = _resolve_class_ids_from_labels(env_targets, local_labels)
 
         if resolved_env_ids:
-            TRAIN_CLASSES = resolved_env_ids
-            logger.info(f"Target classes from env YOLO_TARGET_LABELS: {TRAIN_CLASSES} -> {[MODEL_LABELS.get(i, str(i)) for i in TRAIN_CLASSES]}")
+            local_train_classes = resolved_env_ids
+            logger.info(f"Target classes from env YOLO_TARGET_LABELS: {local_train_classes} -> {[local_labels.get(i, str(i)) for i in local_train_classes]}")
         else:
             # Heuristics:
             # 1) If 'train' exists in labels, use it
             # 2) If only one class exists, use class 0
             # 3) If default coco model, fallback to [6] (train)
-            lower_labels = {idx: name.lower() for idx, name in MODEL_LABELS.items()}
+            lower_labels = {idx: name.lower() for idx, name in local_labels.items()}
             train_like = [idx for idx, name in lower_labels.items() if name == 'train']
             if train_like:
-                TRAIN_CLASSES = sorted(set(train_like))
-            elif len(MODEL_LABELS) == 1:
-                TRAIN_CLASSES = [0]
+                local_train_classes = sorted(set(train_like))
+            elif len(local_labels) == 1:
+                local_train_classes = [0]
             elif os.path.basename(model_path).lower() in {"yolov8n.pt", "yolov8s.pt", "yolov8m.pt", "yolov8l.pt", "yolov8x.pt"}:
-                TRAIN_CLASSES = [6]
+                local_train_classes = [6]
             else:
-                TRAIN_CLASSES = []
+                local_train_classes = []
                 logger.warning("No target classes configured. Set YOLO_TARGET_LABELS or update via /model/targets.")
+
+        # Update globals atomically under lock to prevent concurrent inference issues
+        with model_lock:
+            model = loaded
+            MODEL_PATH = model_path
+            MODEL_LABELS = local_labels
+            TRAIN_CLASSES = local_train_classes
 
         logger.info(f"Model classes: {len(MODEL_LABELS)} -> {list(MODEL_LABELS.values())[:10]}{' ...' if len(MODEL_LABELS) > 10 else ''}")
         logger.info(f"Active target class ids: {TRAIN_CLASSES} -> {[MODEL_LABELS.get(i, str(i)) for i in TRAIN_CLASSES]}")
@@ -444,13 +448,20 @@ class DetectionStats(BaseModel):
 @app.get("/model/info")
 async def get_model_info():
     try:
+        with model_lock:
+            path = MODEL_PATH
+            labels_count = len(MODEL_LABELS)
+            labels = MODEL_LABELS
+            target_class_ids = TRAIN_CLASSES
+            target_class_names = [MODEL_LABELS.get(i, str(i)) for i in target_class_ids]
+            
         return {
             "status": "success",
-            "path": MODEL_PATH,
-            "labels_count": len(MODEL_LABELS),
-            "labels": MODEL_LABELS,
-            "target_class_ids": TRAIN_CLASSES,
-            "target_class_names": [MODEL_LABELS.get(i, str(i)) for i in TRAIN_CLASSES],
+            "path": path,
+            "labels_count": labels_count,
+            "labels": labels,
+            "target_class_ids": target_class_ids,
+            "target_class_names": target_class_names,
             "device": DEVICE_CONFIG['device']
         }
     except Exception as e:
@@ -480,23 +491,26 @@ async def reload_model(req: ModelReloadRequest):
 async def set_model_targets(req: ModelTargetsRequest):
     try:
         global TRAIN_CLASSES
-        if model is None:
-            raise RuntimeError("YOLO model not loaded")
+        with model_lock:
+            if model is None:
+                raise RuntimeError("YOLO model not loaded")
 
-        new_ids: Set[int] = set()
-        if req.target_labels:
-            resolved = _resolve_class_ids_from_labels(req.target_labels, MODEL_LABELS)
-            new_ids.update(resolved)
-        if req.target_class_ids:
-            for cid in req.target_class_ids:
-                if cid in MODEL_LABELS:
-                    new_ids.add(cid)
+            new_ids: Set[int] = set()
+            if req.target_labels:
+                resolved = _resolve_class_ids_from_labels(req.target_labels, MODEL_LABELS)
+                new_ids.update(resolved)
+            if req.target_class_ids:
+                for cid in req.target_class_ids:
+                    if cid in MODEL_LABELS:
+                        new_ids.add(cid)
 
-        TRAIN_CLASSES = sorted(new_ids)
+            TRAIN_CLASSES = sorted(new_ids)
+            target_class_names = [MODEL_LABELS.get(i, str(i)) for i in TRAIN_CLASSES]
+
         return {
             "status": "updated",
             "target_class_ids": TRAIN_CLASSES,
-            "target_class_names": [MODEL_LABELS.get(i, str(i)) for i in TRAIN_CLASSES]
+            "target_class_names": target_class_names
         }
     except Exception as e:
         logger.error(f"Error setting model targets: {e}")
@@ -508,57 +522,64 @@ def detect_trains(frame: np.ndarray) -> tuple[bool, list, np.ndarray]:
     Retorna: (has_trains, detections, annotated_frame)
     """
     try:
-        if model is None:
-            return False, [], frame
-        
-        # Realizar detección - YOLO maneja automáticamente el device correcto
-        # Read confidence threshold from environment, default 0.5
-        import os as _os
-        _CONF_TH = float(_os.getenv('YOLO_CONFIDENCE_THRESHOLD', '0.5'))
-        predict_args = {
-            'verbose': False,
-            'device': DEVICE_CONFIG['device'],
-            'conf': _CONF_TH
-        }
-        if DEVICE_CONFIG['device'] == 'cuda':
-            predict_args['quantize'] = 16
-        results = model(frame, **predict_args)
-        
-        has_trains = False
-        detections = []
-        
-        for result in results:
-            boxes = result.boxes
-            if boxes is not None:
-                for box in boxes:
-                    # Obtener clase y confianza - move tensors to CPU if needed
-                    cls = int(box.cls[0].cpu() if hasattr(box.cls[0], 'cpu') else box.cls[0])
-                    conf = float(box.conf[0].cpu() if hasattr(box.conf[0], 'cpu') else box.conf[0])
-                    
-                    # Verificar si es una clase objetivo y tiene suficiente confianza
-                    if (not TRAIN_CLASSES and conf >= _CONF_TH) or (cls in TRAIN_CLASSES and conf >= _CONF_TH):
-                        has_trains = True
+        # Wrap inference and configuration checks under lock for thread safety
+        with model_lock:
+            if model is None:
+                return False, [], frame
+            
+            # Realizar detección - YOLO maneja automáticamente el device correcto
+            # Read confidence threshold from environment, default 0.5
+            import os as _os
+            _CONF_TH = float(_os.getenv('YOLO_CONFIDENCE_THRESHOLD', '0.5'))
+            predict_args = {
+                'verbose': False,
+                'device': DEVICE_CONFIG['device'],
+                'conf': _CONF_TH
+            }
+            if DEVICE_CONFIG['device'] == 'cuda':
+                # Avoid deprecation warnings in newer versions of Ultralytics while keeping backward compatibility
+                from ultralytics.cfg import get_cfg
+                if hasattr(get_cfg(), 'quantize'):
+                    predict_args['quantize'] = 16
+                else:
+                    predict_args['half'] = True
+            results = model(frame, **predict_args)
+            
+            has_trains = False
+            detections = []
+            
+            for result in results:
+                boxes = result.boxes
+                if boxes is not None:
+                    for box in boxes:
+                        # Obtener clase y confianza - move tensors to CPU if needed
+                        cls = int(box.cls[0].cpu() if hasattr(box.cls[0], 'cpu') else box.cls[0])
+                        conf = float(box.conf[0].cpu() if hasattr(box.conf[0], 'cpu') else box.conf[0])
                         
-                        # Obtener coordenadas de la caja - ensure CPU tensors
-                        bbox_tensor = box.xyxy[0]
-                        if hasattr(bbox_tensor, 'cpu'):
-                            x1, y1, x2, y2 = bbox_tensor.cpu().tolist()
-                        else:
-                            x1, y1, x2, y2 = bbox_tensor.tolist()
-                        
-                        detections.append({
-                            'class': cls,
-                            'confidence': conf,
-                            'bbox': [x1, y1, x2, y2],
-                            'class_name': MODEL_LABELS.get(cls, str(cls))
-                        })
-        
-        # Crear frame anotado si hay detecciones
-        annotated_frame = frame.copy()
-        if has_trains:
-            annotated_frame = results[0].plot()
-        
-        return has_trains, detections, annotated_frame
+                        # Verificar si es una clase objetivo y tiene suficiente confianza
+                        if (not TRAIN_CLASSES and conf >= _CONF_TH) or (cls in TRAIN_CLASSES and conf >= _CONF_TH):
+                            has_trains = True
+                            
+                            # Obtener coordenadas de la caja - ensure CPU tensors
+                            bbox_tensor = box.xyxy[0]
+                            if hasattr(bbox_tensor, 'cpu'):
+                                x1, y1, x2, y2 = bbox_tensor.cpu().tolist()
+                            else:
+                                x1, y1, x2, y2 = bbox_tensor.tolist()
+                            
+                            detections.append({
+                                'class': cls,
+                                'confidence': conf,
+                                'bbox': [x1, y1, x2, y2],
+                                'class_name': MODEL_LABELS.get(cls, str(cls))
+                            })
+            
+            # Crear frame anotado si hay detecciones
+            annotated_frame = frame.copy()
+            if has_trains:
+                annotated_frame = results[0].plot()
+            
+            return has_trains, detections, annotated_frame
         
     except Exception as e:
         logger.error(f"Error in train detection: {e}")
@@ -1424,20 +1445,28 @@ async def get_device_info():
         # Model status
         yolo_device = 'unknown'
         try:
-            if model is not None:
-                yolo_device = str(next(model.model.parameters()).device)
+            with model_lock:
+                if model is not None:
+                    yolo_device = str(next(model.model.parameters()).device)
         except Exception:
             yolo_device = DEVICE_CONFIG['device']
 
+        with model_lock:
+            model_loaded = model is not None
+            model_path = MODEL_PATH
+            labels_count = len(MODEL_LABELS)
+            target_class_ids = TRAIN_CLASSES
+            target_class_names = [MODEL_LABELS.get(i, str(i)) for i in target_class_ids]
+
         device_info['model_status'] = {
-            'yolo_loaded': model is not None,
+            'yolo_loaded': model_loaded,
             'yolo_device': yolo_device,
             'ocr_loaded': False,
             'ocr_gpu_active': False,
-            'model_path': MODEL_PATH,
-            'labels_count': len(MODEL_LABELS),
-            'target_class_ids': TRAIN_CLASSES,
-            'target_class_names': [MODEL_LABELS.get(i, str(i)) for i in TRAIN_CLASSES]
+            'model_path': model_path,
+            'labels_count': labels_count,
+            'target_class_ids': target_class_ids,
+            'target_class_names': target_class_names
         }
         
         return {
@@ -2127,7 +2156,9 @@ async def start_analysis(request: AnalysisRequest, background_tasks: BackgroundT
     """Start real-time analysis of a stream (supports multiple concurrent streams)"""
     global active_analysis_sessions, session_lock
     
-    if model is None:
+    with model_lock:
+        model_loaded = model is not None
+    if not model_loaded:
         raise HTTPException(status_code=500, detail="YOLO model not available")
     
     try:
@@ -2236,10 +2267,12 @@ async def get_analysis_status():
         if active_analysis_sessions:
             # Return data from first active session
             first_session = next(iter(active_analysis_sessions.values()))
+            with model_lock:
+                model_loaded = model is not None
             return {
                 "active": first_session.active,
                 "capture_active": first_session.active,
-                "yolo_model_loaded": model is not None,
+                "yolo_model_loaded": model_loaded,
                 "ocr_enabled": False,
                 "database_status": "connected" if collection is not None else "disconnected",
                 "stream_id": first_session.stream_id,
@@ -2250,10 +2283,12 @@ async def get_analysis_status():
                 "detection_rate": first_session.detection_rate
             }
     
+    with model_lock:
+        model_loaded = model is not None
     return {
         "active": False,
         "capture_active": False,
-        "yolo_model_loaded": model is not None,
+        "yolo_model_loaded": model_loaded,
         "ocr_enabled": False,
         "database_status": "connected" if collection is not None else "disconnected",
         "stream_id": None,

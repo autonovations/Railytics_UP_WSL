@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Table,
   TableBody,
@@ -26,7 +26,6 @@ import {
   Train as TrainIcon,
   LocationOn as LocationIcon,
   Schedule as ScheduleIcon,
-  Badge as BadgeIcon,
   Image as ImageIcon
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
@@ -38,8 +37,6 @@ const DetectionTable = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [searchTerm, setSearchTerm] = useState('');
-  const [orderBy, setOrderBy] = useState('timestamp');
-  const [order, setOrder] = useState('desc');
   const [selectedDetection, setSelectedDetection] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -96,24 +93,12 @@ const DetectionTable = () => {
         second: '2-digit',
         hour12: false
       });
-    } catch (error) {
+    } catch {
       return 'Invalid Date';
     }
   };
 
-  const getReportingMarkChip = (reportingMark, confidence) => {
-    const isRegistered = reportingMark !== 'not registered';
-    return (
-      <Chip
-        icon={<BadgeIcon />}
-        label={reportingMark}
-        color={isRegistered ? 'success' : 'default'}
-        variant={isRegistered ? 'filled' : 'outlined'}
-        size="small"
-        title={confidence ? `Confidence: ${(confidence * 100).toFixed(1)}%` : ''}
-      />
-    );
-  };
+
 
   const getConfidenceColor = (confidence) => {
     if (confidence >= 0.8) return 'success.main';

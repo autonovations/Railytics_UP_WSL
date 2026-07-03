@@ -22,15 +22,12 @@ import {
   PhotoLibrary as PhotoLibraryIcon
 } from '@mui/icons-material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { darkTheme } from './theme';
 import Dashboard from './components/Dashboard/Dashboard';
 import EventFramesPage from './components/RailwayEvents/EventFramesPage';
 
 // Import logos
-import fdLogoWhite from './assets/fd_logo.png';
-import railyticsLogo from './assets/railytics_logo.png';
-import locomotive from './assets/locomotive.jpeg';
 import usa_flag from './assets/usa_flag.jpg';
 import up_logo from './assets/up_logo.jpg';
 
@@ -64,7 +61,6 @@ function TabPanel({ children, value, index, ...other }) {
 function App() {
   const [currentPage, setCurrentPage] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const navigate = useNavigate();
 
   const handlePageChange = (pageIndex) => {
     setCurrentPage(pageIndex);

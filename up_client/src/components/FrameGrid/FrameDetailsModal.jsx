@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -9,25 +8,11 @@ import {
   Box,
   Chip,
   Grid,
-  List,
-  ListItem,
-  ListItemText,
-  Divider,
-  CircularProgress,
-  Alert,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails
 } from '@mui/material';
 import {
   Close,
   Train,
-  QrCode,
-  ExpandMore,
-  Visibility,
-  Analytics
 } from '@mui/icons-material';
-import { motion } from 'framer-motion';
 import { getFrameImageUrl } from '../../services/api';
 
 const FrameDetailsModal = ({ open, onClose, frame }) => {

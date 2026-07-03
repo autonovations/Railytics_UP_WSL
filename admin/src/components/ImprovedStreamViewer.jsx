@@ -59,7 +59,7 @@ const ImprovedStreamViewer = ({ open, onClose, stream }) => {
       }
       
       return url;
-    } catch (e) {
+    } catch {
       return url;
     }
   };

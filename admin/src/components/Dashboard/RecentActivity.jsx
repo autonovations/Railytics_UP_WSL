@@ -119,7 +119,7 @@ const RecentActivity = () => {
     }
   };
 
-  const getActivityIcon = (type, severity) => {
+  const getActivityIcon = (type) => {
     switch (type) {
       case 'detection': return <TrainIcon />;
       case 'stream_start': return <PlayIcon />;
@@ -182,7 +182,7 @@ const RecentActivity = () => {
                           height: 40,
                         }}
                       >
-                        {getActivityIcon(activity.type, activity.severity)}
+                        {getActivityIcon(activity.type)}
                       </Avatar>
                     </ListItemIcon>
                     <ListItemText

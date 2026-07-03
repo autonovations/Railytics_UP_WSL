@@ -37,7 +37,7 @@ import {
   Cell,
 } from 'recharts';
 import { useQuery } from '@tanstack/react-query';
-import { analysisAPI, streamAPI } from '../../services/api';
+import { analysisAPI } from '../../services/api';
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1'];
 
@@ -52,12 +52,7 @@ const StreamMetrics = () => {
     refetchInterval: 2000,
   });
 
-  // Fetch streams
-  const { data: streamsData } = useQuery({
-    queryKey: ['streamsMetrics'],
-    queryFn: () => streamAPI.getAllStreams(true),
-    refetchInterval: 5000,
-  });
+
 
   // Update historical data for charts
   useEffect(() => {
@@ -101,21 +96,11 @@ const StreamMetrics = () => {
   }, [sessionsData]);
 
   const activeSessions = sessionsData?.active_sessions || [];
-  const totalStreams = streamsData?.streams?.length || 0;
   const activeStreams = activeSessions.length;
 
-  const totalStats = activeSessions.reduce(
-    (acc, session) => ({
-      processed: acc.processed + session.frames_processed,
-      detected: acc.detected + session.trains_detected,
-      discarded: acc.discarded + session.frames_discarded,
-    }),
-    { processed: 0, detected: 0, discarded: 0 }
-  );
 
-  const overallDetectionRate = totalStats.processed > 0 
-    ? ((totalStats.detected / totalStats.processed) * 100).toFixed(1)
-    : 0;
+
+
 
   if (sessionsLoading) {
     return (
@@ -260,7 +245,7 @@ const StreamMetrics = () => {
                         outerRadius={150}
                         fill="#8884d8"
                         dataKey="detections"
-                        label={({ name, value, percent }) => {
+                        label={({ name, value }) => {
                           // Truncar nombres muy largos pero mantener el formato completo
                           const shortName = name.length > 20 ? name.substring(0, 20) + '...' : name;
                           return `${shortName}: ${value}`;
@@ -389,7 +374,7 @@ const StreamMetrics = () => {
             🚄 Active Analysis Sessions
           </Typography>
           <Grid container spacing={2}>
-            {activeSessions.map((session, index) => (
+            {activeSessions.map((session) => (
               <Grid item xs={12} md={6} lg={4} key={session.stream_id}>
                 <Card 
                   variant="outlined" 

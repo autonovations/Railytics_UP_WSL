@@ -1296,6 +1296,118 @@ def get_frame_image(filename: str):
     except Exception as e:
         raise HTTPException(status_code=404, detail="Frame not found")
 
+@app.get("/frame/{filename}/crop")
+def get_frame_crop(
+    filename: str,
+    class_name: Optional[str] = None,
+    index: int = -1,
+    pad: int = 0,
+    inner: int = 0,
+    scale: float = 1.0,
+    max_width: Optional[int] = None,
+    max_height: Optional[int] = None
+):
+    """Corta una región específica (de una clase de detección como 'Reporting Mark') de un frame y la sirve"""
+    try:
+        # Prevent Path Traversal
+        safe_base = os.path.abspath(TRAINS_FOLDER)
+        filepath = os.path.abspath(os.path.join(safe_base, filename))
+        
+        if not filepath.startswith(safe_base) or not os.path.exists(filepath):
+            raise HTTPException(status_code=404, detail="Frame not found")
+        
+        # Obtener los metadatos de la base de datos
+        frame_doc = None
+        if collection is not None:
+            try:
+                frame_doc = collection.find_one({"filename": filename})
+            except Exception as e:
+                logger.error(f"Error querying frame for crop: {e}")
+        
+        detections = frame_doc.get("detections", []) if frame_doc else []
+        
+        # Filtrar por clase de detección si se especifica
+        if class_name:
+            matching_dets = [d for d in detections if d.get("class_name", "").lower() == class_name.lower()]
+        else:
+            matching_dets = detections
+            
+        if not matching_dets:
+            raise HTTPException(status_code=404, detail=f"No matching detections found for class '{class_name}'")
+            
+        # Seleccionar la detección
+        if index >= 0 and index < len(matching_dets):
+            target = matching_dets[index]
+        else:
+            # Por defecto usar el de mayor confianza
+            target = max(matching_dets, key=lambda x: x.get("confidence", 0.0))
+            
+        bbox = target.get("bbox")
+        if not bbox or len(bbox) != 4:
+            raise HTTPException(status_code=400, detail="Invalid bounding box in detection metadata")
+            
+        x1, y1, x2, y2 = bbox
+        
+        # Leer imagen
+        img = cv2.imread(filepath)
+        if img is None:
+            raise HTTPException(status_code=500, detail="Failed to load frame image")
+            
+        h, w = img.shape[:2]
+        
+        # Ajustar límites y redondear
+        x1_int = max(0, int(round(x1)))
+        y1_int = max(0, int(round(y1)))
+        x2_int = min(w, int(round(x2)))
+        y2_int = min(h, int(round(y2)))
+        
+        # Aplicar padding
+        if pad > 0:
+            x1_int = max(0, x1_int - pad)
+            y1_int = max(0, y1_int - pad)
+            x2_int = min(w, x2_int + pad)
+            y2_int = min(h, y2_int + pad)
+            
+        crop_w = x2_int - x1_int
+        crop_h = y2_int - y1_int
+        
+        if crop_w <= 0 or crop_h <= 0:
+            raise HTTPException(status_code=400, detail="Invalid crop area dimensions")
+            
+        cropped = img[y1_int:y2_int, x1_int:x2_int]
+        
+        # Escalar si es necesario
+        if scale != 1.0 and scale > 0:
+            new_w = int(round(crop_w * scale))
+            new_h = int(round(crop_h * scale))
+            if new_w > 0 and new_h > 0:
+                cropped = cv2.resize(cropped, (new_w, new_h))
+                
+        # Limitar dimensiones máximas conservando relación de aspecto
+        curr_h, curr_w = cropped.shape[:2]
+        if (max_width and curr_w > max_width) or (max_height and curr_h > max_height):
+            ratio_w = max_width / curr_w if max_width else 1.0
+            ratio_h = max_height / curr_h if max_height else 1.0
+            ratio = min(ratio_w, ratio_h)
+            new_w = int(round(curr_w * ratio))
+            new_h = int(round(curr_h * ratio))
+            if new_w > 0 and new_h > 0:
+                cropped = cv2.resize(cropped, (new_w, new_h))
+                
+        # Codificar y retornar imagen
+        success, encoded_img = cv2.imencode(".jpg", cropped, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to encode cropped image")
+            
+        return StreamingResponse(io.BytesIO(encoded_img.tobytes()), media_type="image/jpeg")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cropping frame: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/network/diagnostics")
 async def get_network_diagnostics():
     """Run network diagnostics to help troubleshoot TLS/connection issues"""
@@ -1415,6 +1527,12 @@ def get_network_recommendations(diagnostics):
 async def get_system_device_info():
     """Alias for get_device_info to support admin dashboard query"""
     return await get_device_info()
+
+@app.get("/system/railcar-types")
+def get_system_railcar_types():
+    """Obtiene la lista de tipos de vagones configurados"""
+    types_list = [t.strip() for t in os.getenv("RAILCAR_TYPES", "locomotive,railcar,boxcar,tank car,flat car,hopper,passenger car,train").split(",") if t.strip()]
+    return {"railcar_types": types_list}
 
 @app.get("/device/info")
 async def get_device_info():

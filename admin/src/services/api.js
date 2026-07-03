@@ -13,16 +13,7 @@ export const getModelInfo = async () => {
   return response.data;
 };
 
-export const getSerialsStats = async () => {
-  return {
-    total_frames_processed: 0,
-    total_frames_with_trains: 0,
-    total_frames_with_serials: 0,
-    total_serials_detected: 0,
-    unique_serials: [],
-    unique_serials_count: 0
-  };
-};
+
 
 // Stream API functions
 export const streamAPI = {

@@ -81,28 +81,7 @@ export const getFrameCropUrl = (filename, options = {}) => {
   return `${API_BASE}/frame/${filename}/crop${query ? `?${query}` : ''}`;
 };
 
-// New OCR/Serials related functions (Stubbed out since OCR is removed)
-export const getFrameSerials = async (filename) => {
-  return {
-    filename,
-    total_trains: 0,
-    total_serials: 0,
-    trains_with_serials: []
-  };
-};
 
-export const getSerialsStats = async () => {
-  return {
-    total_frames_processed: 0,
-    total_frames_with_trains: 0,
-    total_frames_with_serials: 0,
-    total_serials_detected: 0,
-    unique_serials_count: 0,
-    unique_serials: [],
-    average_serials_per_frame: 0,
-    serial_detection_rate: 0
-  };
-};
 
 export const getRailcarTypes = async () => {
   try {

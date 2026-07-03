@@ -546,14 +546,11 @@ def detect_trains(frame: np.ndarray) -> tuple[bool, list, np.ndarray]:
                         else:
                             x1, y1, x2, y2 = bbox_tensor.tolist()
                         
-                        # OCR is extracted asynchronously in background worker
                         detections.append({
                             'class': cls,
                             'confidence': conf,
                             'bbox': [x1, y1, x2, y2],
-                            'class_name': MODEL_LABELS.get(cls, str(cls)),
-                            'serials': [],
-                            'serial_count': 0
+                            'class_name': MODEL_LABELS.get(cls, str(cls))
                         })
         
         # Crear frame anotado si hay detecciones
@@ -1034,7 +1031,7 @@ def capture_frames_multi(stream_id: str, stream_url: str, duration_minutes: int)
                     
 
                     
-                    # Send real-time update via WebSocket (OCR serials_count is 0 since OCR is disabled)
+                    # Send real-time update via WebSocket
                     update_message = {
                         "type": "frame_detected",
                         "stream_id": stream_id,
@@ -1043,7 +1040,6 @@ def capture_frames_multi(stream_id: str, stream_url: str, duration_minutes: int)
                         "trains_detected": local_trains_detected,
                         "frames_discarded": local_frames_discarded,
                         "detection_count": len(detections),
-                        "serials_count": 0,
                         "detection_rate": round((local_trains_detected / local_frames_processed) * 100, 2) if local_frames_processed > 0 else 0,
                         "timestamp": current_time.isoformat()
                     }
@@ -1231,11 +1227,7 @@ def get_frames(limit: int = 12, skip: int = 0, stream_id: Optional[str] = None):
                  "detection_count": 1, "detections": 1, "has_trains": 1, "stream_id": 1}
             ).sort("timestamp", -1).skip(skip).limit(limit))
             
-            # Add serial count summary for each frame
-            for frame in frames:
-                if 'detections' in frame:
-                    total_serials = sum(detection.get('serial_count', 0) for detection in frame['detections'])
-                    frame['total_serials'] = total_serials
+
             
             total_frames = collection.count_documents(query)
         except Exception as e:
@@ -1534,32 +1526,16 @@ def get_detections(limit: int = 50, skip: int = 0):
             
             # Process each detection in the frame
             for detection_idx, detection in enumerate(frame.get('detections', [])):
-                # Check if this detection has serials
-                if 'serials' in detection and detection['serials']:
-                    # Create one record for each serial number found
-                    for serial in detection['serials']:
-                        detections_list.append({
-                            "location": location,
-                            "timestamp": timestamp.isoformat() if timestamp else None,
-                            "reporting_mark": serial.get('cleaned_text', serial.get('text', 'Unknown')),
-                            "confidence": round(serial.get('confidence', 0), 3),
-                            "detection_type": "locomotive/wagon",
-                            "stream_id": stream_id,
-                            "frame_timestamp": timestamp.isoformat() if timestamp else None,
-                            "filename": filename
-                        })
-                else:
-                    # No serials detected for this train
-                    detections_list.append({
-                        "location": location,
-                        "timestamp": timestamp.isoformat() if timestamp else None,
-                        "reporting_mark": "not registered",
-                        "confidence": round(detection.get('confidence', 0), 3),
-                        "detection_type": "locomotive/wagon",
-                        "stream_id": stream_id,
-                        "frame_timestamp": timestamp.isoformat() if timestamp else None,
-                        "filename": filename
-                    })
+                detections_list.append({
+                    "location": location,
+                    "timestamp": timestamp.isoformat() if timestamp else None,
+                    "reporting_mark": "not registered",
+                    "confidence": round(detection.get('confidence', 0), 3),
+                    "detection_type": "locomotive/wagon",
+                    "stream_id": stream_id,
+                    "frame_timestamp": timestamp.isoformat() if timestamp else None,
+                    "filename": filename
+                })
         
         # Get total count for pagination
         total_frames = collection.count_documents({"has_trains": True, "detections": {"$exists": True}})
@@ -1667,13 +1643,11 @@ def get_railway_event_frames(event_id: str, limit: int = 24, skip: int = 0):
 
             frames = list(cursor)
 
-            # Ensure detection_count exists and compute serials summary
+            # Ensure detection_count exists
             for frame in frames:
                 detections = frame.get("detections", []) or []
                 if "detection_count" not in frame:
                     frame["detection_count"] = len(detections)
-                # Helpful summary for UI
-                frame["total_serials"] = sum(d.get("serial_count", 0) for d in detections)
 
             total = collection.count_documents(query)
 

@@ -24,7 +24,7 @@ import {
   Computer as ComputerIcon,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
-import { getSystemInfo, getModelInfo, getSerialsStats, analysisAPI } from '../../services/api';
+import { getSystemInfo, getModelInfo, analysisAPI } from '../../services/api';
 
 const SystemStatus = () => {
   // Fetch system device info
@@ -48,12 +48,7 @@ const SystemStatus = () => {
     refetchInterval: 5000,
   });
 
-  // Fetch serials stats
-  const { data: serialsStats } = useQuery({
-    queryKey: ['serialsStats'],
-    queryFn: getSerialsStats,
-    refetchInterval: 10000,
-  });
+
 
   const isLoading = systemLoading || modelLoading;
   const error = systemError;
@@ -235,7 +230,7 @@ const SystemStatus = () => {
                     secondary={
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Typography variant="body2">
-                          {serialsStats?.total_frames_with_trains || 0} frames
+                          {analysisStatus?.frames_processed || 0} frames
                         </Typography>
                         <Chip
                           label="Tracked"
@@ -453,7 +448,7 @@ const SystemStatus = () => {
                   <Card variant="outlined">
                     <CardContent sx={{ textAlign: 'center' }}>
                       <Typography variant="h4" color="primary">
-                        {serialsStats?.total_frames_with_trains || 0}
+                        {analysisStatus?.trains_detected || 0}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         Frames with Trains

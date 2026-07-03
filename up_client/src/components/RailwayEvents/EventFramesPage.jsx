@@ -100,17 +100,7 @@ const EventFramesPage = () => {
                   const detections = frame.detections || [];
                   const railcars = detections.filter(d => String(d.class_name || '').toLowerCase() === 'railcar').length;
                   const hasReportingMark = detections.some(d => String(d.class_name || '').toLowerCase() === 'reporting mark');
-                  // Extract first serial text if available
-                  let firstText = '';
-                  let bestSerialConfidence = 0;
-                  for (const det of detections) {
-                    if (det.serials && det.serials.length) {
-                      const s = det.serials[0];
-                      firstText = s.cleaned_text || s.text || '';
-                      bestSerialConfidence = Math.max(bestSerialConfidence, Number(s.confidence || 0));
-                      if (firstText) break;
-                    }
-                  }
+
                   // Determine railcar types present based on env list
                   const typeSet = new Set();
                   if (railcarTypes.length > 0) {
